@@ -258,6 +258,11 @@ app.get('/api/getVideoJson', async (req, res) => {
     ytDlpArgs.push('--cookies', cookiesPath);
   }
 
+  // Support proxy configuration (to bypass IP blocks on cloud hosting)
+  if (process.env.YT_DLP_PROXY) {
+    ytDlpArgs.push('--proxy', process.env.YT_DLP_PROXY);
+  }
+
   ytDlpArgs.push(url);
 
   console.log('🚀 Spawning yt-dlp with arguments:', ytDlpArgs.map(arg => arg.includes('cookies') ? '[COOKIES_FILE]' : arg));
