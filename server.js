@@ -10,6 +10,7 @@ const fs = require('fs');
 const Redis = require('ioredis');
 
 const app = express();
+app.set('trust proxy', 1);
 const port = process.env.PORT || 3000;
 
 // ============================================
@@ -214,6 +215,8 @@ app.get('/api/getVideoJson', async (req, res) => {
   }
 
   ytDlpArgs.push(url);
+
+  console.log('🚀 Spawning yt-dlp with arguments:', ytDlpArgs.map(arg => arg.includes('cookies') ? '[COOKIES_FILE]' : arg));
 
   const ytDlpProcess = spawn(ytDlpPath, ytDlpArgs, {
     timeout: 30000 // 30 second timeout
