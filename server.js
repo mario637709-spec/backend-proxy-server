@@ -13,6 +13,46 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // ============================================
+// PROCESS QUEUE (Prevent Server Crash)
+// ============================================
+const MAX_CONCURRENT_PROCESSES = 20; // Max 20 concurrent yt-dlp processes
+let activeProcesses = 0;
+const processQueue = [];
+
+function canStartProcess() {
+  return activeProcesses < MAX_CONCURRENT_PROCESSES;
+}
+
+function startNextInQueue() {
+  if (processQueue.length > 0 && canStartProcess()) {
+    const nextTask = processQueue.shift();
+    nextTask();
+  }
+}
+
+function executeWithQueue(fn) {
+  return new Promise((resolve, reject) => {
+    const task = () => {
+      activeProcesses++;
+      fn()
+        .then(resolve)
+        .catch(reject)
+        .finally(() => {
+          activeProcesses--;
+          startNextInQueue();
+        });
+    };
+
+    if (canStartProcess()) {
+      task();
+    } else {
+      processQueue.push(task);
+      console.log(`⏳ Queue size: ${processQueue.length}, Active: ${activeProcesses}`);
+    }
+  });
+}
+
+// ============================================
 // REDIS SETUP (Optional - Falls back to memory cache)
 // ============================================
 let redis = null;
@@ -160,8 +200,16 @@ app.get('/api/getVideoJson', async (req, res) => {
   ];
 
   // Securely load cookies if present (required for cloud hosting like Render to bypass bot blocks)
-  const cookiesPath = process.env.YT_DLP_COOKIES_PATH || path.join(__dirname, 'cookies.txt');
-  if (fs.existsSync(cookiesPath)) {
+  let cookiesPath = process.env.YT_DLP_COOKIES_PATH;
+  if (!cookiesPath) {
+    if (fs.existsSync('/etc/secrets/cookies.txt')) {
+      cookiesPath = '/etc/secrets/cookies.txt';
+    } else {
+      cookiesPath = path.join(__dirname, 'cookies.txt');
+    }
+  }
+
+  if (cookiesPath && fs.existsSync(cookiesPath)) {
     ytDlpArgs.push('--cookies', cookiesPath);
   }
 
