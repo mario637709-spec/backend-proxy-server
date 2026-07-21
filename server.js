@@ -152,6 +152,50 @@ app.get('/health', (req, res) => {
 });
 
 // ============================================
+// TEMPORARY COOKIES DEBUG ENDPOINT
+// ============================================
+app.get('/api/debug-cookies', (req, res) => {
+  const paths = [
+    '/etc/secrets/cookies.txt',
+    path.join(__dirname, 'cookies.txt'),
+    path.join(__dirname, '..', 'cookies.txt'),
+    'cookies.txt'
+  ];
+  
+  const results = {};
+  
+  for (const p of paths) {
+    const absPath = path.resolve(p);
+    results[p] = {
+      absPath: absPath,
+      exists: fs.existsSync(absPath),
+      readable: false
+    };
+    if (results[p].exists) {
+      try {
+        fs.accessSync(absPath, fs.constants.R_OK);
+        results[p].readable = true;
+        results[p].size = fs.statSync(absPath).size;
+      } catch (e) {
+        results[p].error = e.message;
+      }
+    }
+  }
+
+  try {
+    if (fs.existsSync('/etc/secrets')) {
+      results['/etc/secrets-contents'] = fs.readdirSync('/etc/secrets');
+    } else {
+      results['/etc/secrets-exists'] = false;
+    }
+  } catch (e) {
+    results['/etc/secrets-error'] = e.message;
+  }
+
+  res.json(results);
+});
+
+// ============================================
 // MAIN API - Video Info Extraction (OPTIMIZED)
 // ============================================
 app.get('/api/getVideoJson', async (req, res) => {
