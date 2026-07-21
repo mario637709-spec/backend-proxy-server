@@ -157,8 +157,15 @@ app.get('/api/getVideoJson', async (req, res) => {
     '--skip-download',       // Don't download, just extract
     '--no-warnings',         // Clean output
     '--geo-bypass',          // Bypass geo-restrictions
-    url
   ];
+
+  // Securely load cookies if present (required for cloud hosting like Render to bypass bot blocks)
+  const cookiesPath = process.env.YT_DLP_COOKIES_PATH || path.join(__dirname, 'cookies.txt');
+  if (fs.existsSync(cookiesPath)) {
+    ytDlpArgs.push('--cookies', cookiesPath);
+  }
+
+  ytDlpArgs.push(url);
 
   const ytDlpProcess = spawn(ytDlpPath, ytDlpArgs, {
     timeout: 30000 // 30 second timeout
