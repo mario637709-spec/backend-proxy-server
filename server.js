@@ -280,9 +280,11 @@ app.get('/api/getVideoJson', async (req, res) => {
     ytDlpArgs.push('--extractor-args', 'youtube:player_client=mweb,ios,android_vr,web');
   }
 
-  // Support custom SOCKS5/HTTP proxy if explicitly configured in environment
-  if (process.env.YT_DLP_PROXY) {
-    ytDlpArgs.push('--proxy', process.env.YT_DLP_PROXY);
+  // Support custom SOCKS5/HTTP proxy if explicitly configured in environment (supports both YT_DLP_PROXY and TUNNEL_URL)
+  const proxyUrl = process.env.YT_DLP_PROXY || process.env.TUNNEL_URL;
+  if (proxyUrl) {
+    const formattedProxy = proxyUrl.startsWith('http://') || proxyUrl.startsWith('https://') || proxyUrl.startsWith('socks5://') ? proxyUrl : `http://${proxyUrl}`;
+    ytDlpArgs.push('--proxy', formattedProxy);
   }
 
   // Securely load cookies if present (required for cloud hosting like Render to bypass bot blocks)
