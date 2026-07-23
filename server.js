@@ -221,9 +221,9 @@ app.get('/api/getVideoJson', async (req, res) => {
     } catch (err) {}
   }
 
-  // 1. Check cache first (90% hit rate in production)
+  // 1. Check cache first (must have valid formats array)
   const cached = await getCached(cacheKey);
-  if (cached) {
+  if (cached && Array.isArray(cached.formats) && cached.formats.length > 0) {
     console.log('✅ Cache HIT:', videoId);
     return res.json({ ...cached, cached: true });
   }
