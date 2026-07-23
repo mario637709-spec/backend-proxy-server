@@ -273,10 +273,9 @@ app.get('/api/getVideoJson', async (req, res) => {
     '--extractor-args', 'youtube:player_client=android_vr,web', // Bypasses bot authentication checks
   ];
 
-  // Support Cloudflare Worker Proxy or custom HTTP proxy
-  const activeProxy = process.env.CF_WORKER_URL || process.env.YT_DLP_PROXY || 'https://ytdown-proxy.vishnusaini3v.workers.dev';
-  if (activeProxy) {
-    ytDlpArgs.push('--proxy', activeProxy);
+  // Support custom SOCKS5/HTTP proxy if explicitly configured in environment
+  if (process.env.YT_DLP_PROXY) {
+    ytDlpArgs.push('--proxy', process.env.YT_DLP_PROXY);
   }
 
   // Securely load cookies if present (required for cloud hosting like Render to bypass bot blocks)
