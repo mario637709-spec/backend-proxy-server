@@ -251,6 +251,29 @@ app.get('/api/getVideoJson', async (req, res) => {
   inFlightPromise.catch(() => {});
   inFlightMap.set(videoId, inFlightPromise);
 
+  // 1c. If TUNNEL_URL is configured, forward request to Laptop API Bridge (bypasses datacenter IP blocks)
+  const tunnelUrl = process.env.TUNNEL_URL;
+  if (tunnelUrl) {
+    try {
+      const cleanTunnel = tunnelUrl.startsWith('http://') || tunnelUrl.startsWith('https://') ? tunnelUrl : `https://${tunnelUrl}`;
+      const targetUrl = `${cleanTunnel}/api/getVideoJson?videoId=${videoId}${poToken ? `&poToken=${poToken}` : ''}`;
+      console.log('🌐 Forwarding extraction to Laptop Tunnel Bridge:', targetUrl);
+      
+      const tunnelResponse = await fetch(targetUrl, { signal: AbortSignal.timeout(15000) });
+      if (tunnelResponse.ok) {
+        const data = await tunnelResponse.json();
+        if (data && Array.isArray(data.formats) && data.formats.length > 0) {
+          await setCached(cacheKey, data);
+          inFlightMap.delete(videoId);
+          resolveInFlight(data);
+          return res.json({ ...data, cached: false, tunneled: true });
+        }
+      }
+    } catch (tunnelErr) {
+      console.warn('⚠️ Tunnel Bridge failed, falling back to local yt-dlp:', tunnelErr.message);
+    }
+  }
+
   // 2. Extract using yt-dlp
   const os = require('os');
   const ytDlpExecutable = os.platform() === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
