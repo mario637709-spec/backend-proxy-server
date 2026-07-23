@@ -275,7 +275,6 @@ app.get('/api/getVideoJson', async (req, res) => {
   ];
 
   if (poToken) {
-    ytDlpArgs.push('--po-token', `web+${poToken}`);
     ytDlpArgs.push('--extractor-args', `youtube:player_client=web,android_vr;po_token=web+${poToken}`);
   } else {
     ytDlpArgs.push('--extractor-args', 'youtube:player_client=android_vr,web');
