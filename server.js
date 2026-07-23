@@ -255,7 +255,7 @@ app.get('/api/getVideoJson', async (req, res) => {
   const tunnelUrl = process.env.TUNNEL_URL;
   if (tunnelUrl) {
     try {
-      const cleanTunnel = tunnelUrl.startsWith('http://') || tunnelUrl.startsWith('https://') ? tunnelUrl : `https://${tunnelUrl}`;
+      const cleanTunnel = (tunnelUrl.startsWith('http://') || tunnelUrl.startsWith('https://') ? tunnelUrl : `https://${tunnelUrl}`).replace(/\/+$/, '');
       const targetUrl = `${cleanTunnel}/api/getVideoJson?videoId=${videoId}${poToken ? `&poToken=${poToken}` : ''}`;
       console.log('🌐 Forwarding extraction to Laptop Tunnel Bridge:', targetUrl);
       
@@ -268,7 +268,7 @@ app.get('/api/getVideoJson', async (req, res) => {
       });
       if (tunnelResponse.ok) {
         const data = await tunnelResponse.json();
-        if (data && Array.isArray(data.formats) && data.formats.length > 0) {
+        if (data && (Array.isArray(data.formats) || data.title)) {
           await setCached(cacheKey, data);
           inFlightMap.delete(videoId);
           resolveInFlight(data);
