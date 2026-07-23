@@ -270,7 +270,14 @@ app.get('/api/getVideoJson', async (req, res) => {
     '--skip-download',       // Don't download, just extract
     '--no-warnings',         // Clean output
     '--geo-bypass',          // Bypass geo-restrictions
+    '--extractor-args', 'youtube:player_client=android_vr,web', // Bypasses bot authentication checks
   ];
+
+  // Support Cloudflare Worker Proxy or custom HTTP proxy
+  const activeProxy = process.env.CF_WORKER_URL || process.env.YT_DLP_PROXY;
+  if (activeProxy) {
+    ytDlpArgs.push('--proxy', activeProxy);
+  }
 
   // Securely load cookies if present (required for cloud hosting like Render to bypass bot blocks)
   let cookiesPath = process.env.YT_DLP_COOKIES_PATH;
@@ -284,11 +291,6 @@ app.get('/api/getVideoJson', async (req, res) => {
 
   if (cookiesPath && fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0) {
     ytDlpArgs.push('--cookies', cookiesPath);
-  }
-
-  // Support proxy configuration (to bypass IP blocks on cloud hosting)
-  if (process.env.YT_DLP_PROXY) {
-    ytDlpArgs.push('--proxy', process.env.YT_DLP_PROXY);
   }
 
   ytDlpArgs.push(url);
