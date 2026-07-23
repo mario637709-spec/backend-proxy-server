@@ -275,9 +275,9 @@ app.get('/api/getVideoJson', async (req, res) => {
   ];
 
   if (poToken) {
-    ytDlpArgs.push('--extractor-args', `youtube:player_client=web,android_vr;po_token=web+${poToken}`);
+    ytDlpArgs.push('--extractor-args', `youtube:player_client=mweb,ios,web,android_vr;po_token=web+${poToken}`);
   } else {
-    ytDlpArgs.push('--extractor-args', 'youtube:player_client=android_vr,web');
+    ytDlpArgs.push('--extractor-args', 'youtube:player_client=mweb,ios,android_vr,web');
   }
 
   // Support custom SOCKS5/HTTP proxy if explicitly configured in environment
