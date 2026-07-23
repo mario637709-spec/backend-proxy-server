@@ -114,14 +114,22 @@ app.get('/api/getVideoJson', async (req, res) => {
   const ytDlpExecutable = os.platform() === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
   const ytDlpPath = path.join(__dirname, ytDlpExecutable);
 
+  const poToken = req.query.poToken || req.body?.poToken;
+
   const ytDlpArgs = [
     '-J',
     '--no-playlist',
     '--skip-download',
     '--no-warnings',
     '--geo-bypass',
-    '--extractor-args', 'youtube:player_client=android_vr,web',
   ];
+
+  if (poToken) {
+    ytDlpArgs.push('--po-token', `web+${poToken}`);
+    ytDlpArgs.push('--extractor-args', `youtube:player_client=web,android_vr;po_token=web+${poToken}`);
+  } else {
+    ytDlpArgs.push('--extractor-args', 'youtube:player_client=android_vr,web');
+  }
 
   if (process.env.YT_DLP_PROXY) {
     ytDlpArgs.push('--proxy', process.env.YT_DLP_PROXY);
