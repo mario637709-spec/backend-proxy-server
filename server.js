@@ -264,14 +264,22 @@ app.get('/api/getVideoJson', async (req, res) => {
     });
   }
 
+  const poToken = req.query.poToken || req.body?.poToken;
+
   const ytDlpArgs = [
     '-J',                    // JSON output
     '--no-playlist',         // Single video only
     '--skip-download',       // Don't download, just extract
     '--no-warnings',         // Clean output
     '--geo-bypass',          // Bypass geo-restrictions
-    '--extractor-args', 'youtube:player_client=android_vr,web', // Bypasses bot authentication checks
   ];
+
+  if (poToken) {
+    ytDlpArgs.push('--po-token', `web+${poToken}`);
+    ytDlpArgs.push('--extractor-args', `youtube:player_client=web,android_vr;po_token=web+${poToken}`);
+  } else {
+    ytDlpArgs.push('--extractor-args', 'youtube:player_client=android_vr,web');
+  }
 
   // Support custom SOCKS5/HTTP proxy if explicitly configured in environment
   if (process.env.YT_DLP_PROXY) {
