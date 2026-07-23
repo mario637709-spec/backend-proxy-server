@@ -1,4 +1,4 @@
-// Load environment variables
+// Load environment variables - updated proxy size limit
 require('dotenv').config();
 
 const express = require('express');
@@ -16,9 +16,16 @@ const port = process.env.PORT || 3000;
 // ============================================
 // PROCESS QUEUE (Prevent Server Crash)
 // ============================================
-const MAX_CONCURRENT_PROCESSES = 20; // Max 20 concurrent yt-dlp processes
+const MAX_CONCURRENT_PROCESSES = parseInt(process.env.MAX_CONCURRENT_PROCESSES || '50'); // High concurrency support
 let activeProcesses = 0;
 const processQueue = [];
+
+// ============================================
+// IN-FLIGHT DEDUPLICATION
+// If 10 workers request the same videoId at once,
+// only 1 yt-dlp spawns — all 10 share the same Promise.
+// ============================================
+const inFlightMap = new Map(); // videoId -> Promise
 
 function canStartProcess() {
   return activeProcesses < MAX_CONCURRENT_PROCESSES;
@@ -128,10 +135,10 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Aggressive rate limiting
+// Dynamic rate limiting (bypassed/increased in development)
 const limiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 10, // 10 requests per minute per IP
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || 60000),
+  max: process.env.NODE_ENV === 'development' ? 10000 : parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || 10),
   message: { error: 'Too many requests. Please wait 1 minute.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -221,12 +228,33 @@ app.get('/api/getVideoJson', async (req, res) => {
     return res.json({ ...cached, cached: true });
   }
 
+  // 1b. Deduplication: if same videoId is already being extracted, share the result
+  if (inFlightMap.has(videoId)) {
+    console.log('🔄 In-flight HIT (dedup):', videoId);
+    try {
+      const result = await inFlightMap.get(videoId);
+      return res.json({ ...result, cached: true, deduped: true });
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to extract video information', details: err.message });
+    }
+  }
+
   console.log('⏳ Cache MISS, extracting:', videoId);
+
+  // Register in-flight promise before spawning
+  let resolveInFlight, rejectInFlight;
+  const inFlightPromise = new Promise((res, rej) => {
+    resolveInFlight = res;
+    rejectInFlight = rej;
+  });
+  // Prevent UnhandledPromiseRejection crash if no secondary caller awaits it
+  inFlightPromise.catch(() => {});
+  inFlightMap.set(videoId, inFlightPromise);
 
   // 2. Extract using yt-dlp
   const os = require('os');
   const ytDlpExecutable = os.platform() === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
-  const ytDlpPath = path.join(__dirname, ytDlpExecutable);
+  const ytDlpPath = os.platform() === 'win32' ? '.\\yt-dlp.exe' : path.join(__dirname, ytDlpExecutable);
 
   // Check if yt-dlp exists
   if (!fs.existsSync(ytDlpPath)) {
@@ -254,7 +282,7 @@ app.get('/api/getVideoJson', async (req, res) => {
     }
   }
 
-  if (cookiesPath && fs.existsSync(cookiesPath)) {
+  if (cookiesPath && fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0) {
     ytDlpArgs.push('--cookies', cookiesPath);
   }
 
@@ -268,7 +296,11 @@ app.get('/api/getVideoJson', async (req, res) => {
   console.log('🚀 Spawning yt-dlp with arguments:', ytDlpArgs.map(arg => arg.includes('cookies') ? '[COOKIES_FILE]' : arg));
 
   const ytDlpProcess = spawn(ytDlpPath, ytDlpArgs, {
-    timeout: 30000 // 30 second timeout
+    timeout: 120000 // Increase timeout to 120 seconds for slow extractions
+  });
+
+  ytDlpProcess.on('error', (err) => {
+    console.error('❌ Spawn error:', err);
   });
 
   let stdoutData = '';
@@ -324,6 +356,10 @@ app.get('/api/getVideoJson', async (req, res) => {
         // 4. Cache for 5 hours (URLs valid for 6)
         await setCached(cacheKey, result, 5 * 60 * 60);
 
+        // Resolve in-flight and remove from map
+        inFlightMap.delete(videoId);
+        resolveInFlight(result);
+
         res.json(result);
 
         console.log(`✅ Extracted: ${info.title} (${formats.length} formats)`);
@@ -338,6 +374,11 @@ app.get('/api/getVideoJson', async (req, res) => {
     } else {
       console.error(`❌ yt-dlp error (code ${code}):`, stderrData);
       
+      // Reject in-flight and remove from map
+      inFlightMap.delete(videoId);
+      const extractErr = new Error(stderrData || 'yt-dlp failed');
+      rejectInFlight(extractErr);
+
       // Specific error messages
       let errorMsg = 'Failed to extract video information';
       if (stderrData.includes('Video unavailable')) {
@@ -414,7 +455,14 @@ app.get('/api/download', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
     res.setHeader('Accept-Ranges', 'bytes');
 
-    Readable.fromWeb(response.body).pipe(res);
+    const stream = Readable.fromWeb(response.body);
+    stream.on('error', (streamErr) => {
+      console.log('ℹ️ Stream connection closed by client during download');
+    });
+    res.on('close', () => {
+      stream.destroy();
+    });
+    stream.pipe(res);
 
   } catch (err) {
     console.error('❌ Download proxy error:', err);
