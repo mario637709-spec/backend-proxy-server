@@ -212,26 +212,15 @@ app.get('/api/getVideoJson', async (req, res) => {
 
       } catch (e) {
         console.error('❌ Parse error:', e);
-        // Tunnel Fallback if Cloud IP blocked
-      const tunnelUrl = process.env.TUNNEL_URL;
-      if (tunnelUrl && (stderrData.includes('Sign in') || stderrData.includes('confirm'))) {
-        console.log(`🌐 Datacenter IP blocked. Falling back to active Tunnel: ${tunnelUrl}`);
-        try {
-          const fallbackRes = await fetch(`${tunnelUrl}/api/getVideoJson?videoId=${videoId}`);
-          if (fallbackRes.ok) {
-            const fallbackData = await fallbackRes.json();
-            await setCached(cacheKey, fallbackData, 5 * 60 * 60);
-            return res.json(fallbackData);
-          }
-        } catch (fbErr) {
-          console.error('⚠️ Tunnel fallback failed:', fbErr.message);
-        }
+      // Specific error messages
+      let errorMsg = 'Failed to extract video information';
+      if (stderrData.includes('Video unavailable')) {
+        errorMsg = 'Video is unavailable or private';
+      } else if (stderrData.includes('Sign in')) {
+        errorMsg = 'Video requires authentication';
+      } else if (stderrData.includes('blocked')) {
+        errorMsg = 'Video is blocked in your region';
       }
-
-      res.status(500).json({
-        error: stderrData.includes('Sign in') ? 'Video requires authentication' : 'Failed to extract video information',
-        details: process.env.NODE_ENV === 'development' ? stderrData : undefined
-      });
       }
     } else {
       console.error(`❌ yt-dlp error (code ${code}):`, stderrData);
