@@ -115,18 +115,32 @@ app.get('/api/getVideoJson', async (req, res) => {
   const ytDlpPath = path.join(__dirname, ytDlpExecutable);
 
   const ytDlpArgs = [
-    '-J',                           // JSON output
-    '--no-playlist',                // Single video only
-    '--skip-download',              // Don't download, just extract
-    '--no-warnings',                // Clean output
-    '--geo-bypass',                 // Bypass geo-restrictions
+    '-J',
+    '--no-playlist',
+    '--skip-download',
+    '--no-warnings',
+    '--geo-bypass',
+    '--extractor-args', 'youtube:player_client=android_vr,web',
   ];
 
-  // Support proxy or tunnel fallback for cloud deployments (Render)
-  const tunnelUrl = process.env.TUNNEL_URL || 'https://myspace-mooing-lushly.ngrok-free.dev';
-  const proxyUrl = process.env.YT_DLP_PROXY;
-  if (proxyUrl) {
-    ytDlpArgs.push('--proxy', proxyUrl);
+  // Support Cloudflare Worker Proxy or custom HTTP proxy
+  const activeProxy = process.env.CF_WORKER_URL || process.env.YT_DLP_PROXY;
+  if (activeProxy) {
+    ytDlpArgs.push('--proxy', activeProxy);
+  }
+
+  // Check for cookies file
+  let cookiesPath = process.env.YT_DLP_COOKIES_PATH;
+  if (!cookiesPath) {
+    if (fs.existsSync('/etc/secrets/cookies.txt')) {
+      cookiesPath = '/etc/secrets/cookies.txt';
+    } else {
+      cookiesPath = path.join(__dirname, 'cookies.txt');
+    }
+  }
+
+  if (cookiesPath && fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0) {
+    ytDlpArgs.push('--cookies', cookiesPath);
   }
 
   ytDlpArgs.push(url);
