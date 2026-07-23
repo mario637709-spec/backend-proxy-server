@@ -124,7 +124,7 @@ app.get('/api/getVideoJson', async (req, res) => {
   ];
 
   // Support Cloudflare Worker Proxy or custom HTTP proxy
-  const activeProxy = process.env.CF_WORKER_URL || process.env.YT_DLP_PROXY;
+  const activeProxy = process.env.CF_WORKER_URL || process.env.YT_DLP_PROXY || 'https://ytdown-proxy.vishnusaini3v.workers.dev';
   if (activeProxy) {
     ytDlpArgs.push('--proxy', activeProxy);
   }
