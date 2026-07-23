@@ -387,22 +387,6 @@ app.get('/api/getVideoJson', async (req, res) => {
       const extractErr = new Error(stderrData || 'yt-dlp failed');
       rejectInFlight(extractErr);
 
-      // If bot protection triggers on cloud datacenter IP, attempt Tunnel fallback if available
-      const tunnelUrl = process.env.TUNNEL_URL;
-      if (tunnelUrl && (stderrData.includes('Sign in') || stderrData.includes('confirm'))) {
-        console.log(`🌐 Datacenter IP blocked. Falling back to active Tunnel: ${tunnelUrl}`);
-        try {
-          const fallbackRes = await fetch(`${tunnelUrl}/api/getVideoJson?videoId=${videoId}`);
-          if (fallbackRes.ok) {
-            const fallbackData = await fallbackRes.json();
-            await setCached(cacheKey, fallbackData, 5 * 60 * 60);
-            return res.json(fallbackData);
-          }
-        } catch (fbErr) {
-          console.error('⚠️ Tunnel fallback failed:', fbErr.message);
-        }
-      }
-
       // Specific error messages
       let errorMsg = 'Failed to extract video information';
       if (stderrData.includes('Video unavailable')) {
