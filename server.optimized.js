@@ -249,43 +249,44 @@ app.get('/api/getVideoJson', async (req, res) => {
 app.get('/api/download', async (req, res) => {
   const fileUrl = req.query.url;
   const filename = req.query.filename || 'video.mp4';
-  const maxSize = 100 * 1024 * 1024; // 100MB limit
 
   if (!fileUrl) {
     return res.status(400).json({ error: 'URL required' });
   }
 
   try {
-    // Get file info first
-    const headRes = await fetch(fileUrl, { method: 'HEAD' });
-    const contentLength = parseInt(headRes.headers.get('content-length') || '0');
+    const fetchHeaders = {
+      'User-Agent': 'com.google.android.youtube/19.29.37 (Linux; U; Android 14)',
+      'Accept': '*/*'
+    };
 
-    // Redirect large files directly to YouTube (saves bandwidth)
-    if (contentLength > maxSize) {
-      console.log(`⚠️ Large file (${Math.round(contentLength / 1024 / 1024)}MB), redirecting`);
-      return res.redirect(302, fileUrl);
+    if (req.headers.range) {
+      fetchHeaders['Range'] = req.headers.range;
     }
 
-    // Proxy small files
-    console.log(`📥 Proxying small file: ${Math.round(contentLength / 1024 / 1024)}MB`);
-    
     const response = await fetch(fileUrl, {
-      headers: {
-        'User-Agent': 'com.google.android.youtube/19.29.37 (Linux; U; Android 14)',
-        'Accept': '*/*'
-      },
+      headers: fetchHeaders,
       redirect: 'follow'
     });
 
     if (!response.ok) {
-      return res.status(response.status).json({ error: 'Failed to fetch video' });
+      console.error(`❌ Download fetch failed with status ${response.status}`);
+      return res.status(response.status).json({ error: 'Failed to fetch video from source' });
     }
 
-    res.setHeader('Content-Type', response.headers.get('content-type') || 'video/mp4');
+    const contentType = response.headers.get('content-type') || 'video/mp4';
+    const contentLength = response.headers.get('content-length');
+
+    res.setHeader('Content-Type', contentType);
     if (contentLength) {
       res.setHeader('Content-Length', contentLength);
     }
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.setHeader('Accept-Ranges', 'bytes');
+    if (response.headers.get('content-range')) {
+      res.setHeader('Content-Range', response.headers.get('content-range'));
+      res.status(206);
+    }
 
     const stream = Readable.fromWeb(response.body);
     stream.on('error', (streamErr) => {
