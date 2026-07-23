@@ -213,10 +213,26 @@ app.get('/api/getVideoJson', async (req, res) => {
 
       } catch (e) {
         console.error('❌ Parse error:', e);
-        res.status(500).json({
-          error: 'Failed to parse video data',
-          details: process.env.NODE_ENV === 'development' ? e.message : undefined
-        });
+        // Tunnel Fallback if Cloud IP blocked
+      const tunnelUrl = process.env.TUNNEL_URL;
+      if (tunnelUrl && (stderrData.includes('Sign in') || stderrData.includes('confirm'))) {
+        console.log(`🌐 Datacenter IP blocked. Falling back to active Tunnel: ${tunnelUrl}`);
+        try {
+          const fallbackRes = await fetch(`${tunnelUrl}/api/getVideoJson?videoId=${videoId}`);
+          if (fallbackRes.ok) {
+            const fallbackData = await fallbackRes.json();
+            await setCached(cacheKey, fallbackData, 5 * 60 * 60);
+            return res.json(fallbackData);
+          }
+        } catch (fbErr) {
+          console.error('⚠️ Tunnel fallback failed:', fbErr.message);
+        }
+      }
+
+      res.status(500).json({
+        error: stderrData.includes('Sign in') ? 'Video requires authentication' : 'Failed to extract video information',
+        details: process.env.NODE_ENV === 'development' ? stderrData : undefined
+      });
       }
     } else {
       console.error(`❌ yt-dlp error (code ${code}):`, stderrData);
