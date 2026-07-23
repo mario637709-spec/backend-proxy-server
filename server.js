@@ -259,7 +259,13 @@ app.get('/api/getVideoJson', async (req, res) => {
       const targetUrl = `${cleanTunnel}/api/getVideoJson?videoId=${videoId}${poToken ? `&poToken=${poToken}` : ''}`;
       console.log('🌐 Forwarding extraction to Laptop Tunnel Bridge:', targetUrl);
       
-      const tunnelResponse = await fetch(targetUrl, { signal: AbortSignal.timeout(15000) });
+      const tunnelResponse = await fetch(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+          'Accept': 'application/json'
+        },
+        signal: AbortSignal.timeout(20000)
+      });
       if (tunnelResponse.ok) {
         const data = await tunnelResponse.json();
         if (data && Array.isArray(data.formats) && data.formats.length > 0) {
@@ -268,6 +274,8 @@ app.get('/api/getVideoJson', async (req, res) => {
           resolveInFlight(data);
           return res.json({ ...data, cached: false, tunneled: true });
         }
+      } else {
+        console.warn('⚠️ Tunnel Bridge returned status:', tunnelResponse.status);
       }
     } catch (tunnelErr) {
       console.warn('⚠️ Tunnel Bridge failed, falling back to local yt-dlp:', tunnelErr.message);
