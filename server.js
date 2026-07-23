@@ -283,7 +283,8 @@ app.get('/api/getVideoJson', async (req, res) => {
   // Support custom SOCKS5/HTTP proxy if explicitly configured in environment (supports both YT_DLP_PROXY and TUNNEL_URL)
   const proxyUrl = process.env.YT_DLP_PROXY || process.env.TUNNEL_URL;
   if (proxyUrl) {
-    const formattedProxy = proxyUrl.startsWith('http://') || proxyUrl.startsWith('https://') || proxyUrl.startsWith('socks5://') ? proxyUrl : `http://${proxyUrl}`;
+    const cleanProxy = proxyUrl.replace(/^https?:\/\//i, '');
+    const formattedProxy = `http://${cleanProxy}`;
     ytDlpArgs.push('--proxy', formattedProxy);
   }
 
