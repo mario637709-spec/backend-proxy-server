@@ -266,9 +266,10 @@ app.get('/api/getVideoJson', async (req, res) => {
       const tunnelResponse = await fetch(targetUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'Bypass-Tunnel-Reminder': 'true'
         },
-        signal: AbortSignal.timeout(20000)
+        signal: AbortSignal.timeout(25000)
       });
       if (tunnelResponse.ok) {
         const data = await tunnelResponse.json();
