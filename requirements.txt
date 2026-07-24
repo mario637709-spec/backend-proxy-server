@@ -1,5 +1,1 @@
-fastapi
-uvicorn
 yt-dlp
-requests
-curl_cffi
