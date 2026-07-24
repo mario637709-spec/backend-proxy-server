@@ -87,6 +87,9 @@ app.get('/api/debugCookies', (req, res) => {
   });
 });
 
+// Resolve yt-dlp binary path (downloaded via postinstall script)
+const ytDlpBinary = path.join(__dirname, os.platform() === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+
 // Helper to get or create cookies file path
 function getCookiesFilePath() {
   if (process.env.YT_COOKIES) {
