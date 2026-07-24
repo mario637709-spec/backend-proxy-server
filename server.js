@@ -76,8 +76,8 @@ app.get('/health', (req, res) => {
 
 app.get('/api/debugCookies', (req, res) => {
   const envCookies = process.env.YT_COOKIES;
-  const tmpCookiesPath = path.join(os.tmpdir(), 'yt_cookies.txt');
-  const exists = fs.existsSync(tmpCookiesPath);
+  const tmpCookiesPath = getCookiesFilePath();
+  const exists = tmpCookiesPath ? fs.existsSync(tmpCookiesPath) : false;
   res.json({
     hasEnvCookies: !!envCookies,
     envCookiesSize: envCookies ? envCookies.length : 0,
@@ -114,7 +114,8 @@ function runYtDlpOnRender(videoId, poToken) {
       '--skip-download',
       '--no-warnings',
       '--geo-bypass',
-      '--no-check-certificates'
+      '--no-check-certificates',
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
     ];
 
     const cookiesPath = getCookiesFilePath();
