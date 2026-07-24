@@ -5,8 +5,12 @@ const path = require('path');
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 const Redis = require('ioredis');
+const os = require('os');
 
 const app = express();
+
+// Fix X-Forwarded-For ValidationError on Render (behind a proxy)
+app.set('trust proxy', 1);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -70,6 +74,55 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Resolve yt-dlp binary path (downloaded via postinstall script)
+const ytDlpBinary = path.join(__dirname, os.platform() === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+
+function runYtDlpOnRender(videoId, poToken) {
+  return new Promise((resolve, reject) => {
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+    const args = [
+      '-J',
+      '--no-playlist',
+      '--skip-download',
+      '--no-warnings',
+      '--geo-bypass',
+      '--no-check-certificates'
+    ];
+
+    if (poToken) {
+      args.push('--extractor-args', `youtube:player_client=mweb,ios;po_token=web+${poToken}`);
+    } else {
+      args.push('--extractor-args', 'youtube:player_client=mweb,ios');
+    }
+
+    args.push(videoUrl);
+
+    console.log(`🔧 Running yt-dlp on Render for videoId: ${videoId}`);
+
+    const proc = spawn(ytDlpBinary, args, { timeout: 55000 });
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', d => stdout += d.toString());
+    proc.stderr.on('data', d => stderr += d.toString());
+
+    proc.on('close', code => {
+      if (code === 0 && stdout.trim()) {
+        try {
+          resolve(JSON.parse(stdout));
+        } catch (e) {
+          reject(new Error('Failed to parse yt-dlp output: ' + e.message));
+        }
+      } else {
+        reject(new Error(stderr.slice(-500) || `yt-dlp exited with code ${code}`));
+      }
+    });
+
+    proc.on('error', err => reject(new Error(`yt-dlp spawn error: ${err.message}`)));
+  });
+}
+
 const inFlightMap = new Map();
 
 app.get('/api/getVideoJson', async (req, res) => {
@@ -83,12 +136,12 @@ app.get('/api/getVideoJson', async (req, res) => {
   const cachedData = await getCached(cacheKey);
 
   if (cachedData) {
-    console.log('⚡ Redis/Memory Cache HIT for videoId:', videoId);
+    console.log('⚡ Cache HIT for videoId:', videoId);
     return res.json({ ...cachedData, cached: true });
   }
 
   if (inFlightMap.has(videoId)) {
-    console.log('⏳ Joining in-flight extraction request for videoId:', videoId);
+    console.log('⏳ Joining in-flight extraction for videoId:', videoId);
     try {
       const result = await inFlightMap.get(videoId);
       return res.json({ ...result, cached: true });
@@ -107,49 +160,42 @@ app.get('/api/getVideoJson', async (req, res) => {
   inFlightMap.set(videoId, inFlightPromise);
 
   const poToken = req.query.poToken || req.body?.poToken;
-  const tunnelUrl = process.env.TUNNEL_URL;
 
-  if (tunnelUrl) {
-    try {
-      const cleanTunnel = (tunnelUrl.startsWith('http://') || tunnelUrl.startsWith('https://') ? tunnelUrl : `https://${tunnelUrl}`).replace(/\/+$/, '');
-      const targetUrl = `${cleanTunnel}/api/getVideoJson?videoId=${videoId}${poToken ? `&poToken=${encodeURIComponent(poToken)}` : ''}`;
-      console.log('🌐 Forwarding extraction to Laptop Tunnel Bridge:', targetUrl);
-      
-      process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
-      const tunnelResponse = await fetch(targetUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-          'Accept': 'application/json',
-          'Bypass-Tunnel-Reminder': 'true'
-        },
-        signal: AbortSignal.timeout(60000)
-      });
-
-      const data = await tunnelResponse.json();
-      if (tunnelResponse.ok && data && (Array.isArray(data.formats) || data.title)) {
-        await setCached(cacheKey, data);
-        inFlightMap.delete(videoId);
-        resolveInFlight(data);
-        return res.json({ ...data, cached: false, tunneled: true });
-      } else {
-        console.warn('⚠️ Tunnel Bridge returned error:', data);
-        inFlightMap.delete(videoId);
-        rejectInFlight(new Error(data.error || 'Tunnel extraction failed'));
-        return res.status(tunnelResponse.status || 500).json(data);
-      }
-    } catch (tunnelErr) {
-      console.warn('⚠️ Tunnel Bridge connection failed:', tunnelErr.message);
-      inFlightMap.delete(videoId);
-      rejectInFlight(tunnelErr);
-      return res.status(500).json({ error: `Tunnel bridge connection error: ${tunnelErr.message}` });
-    }
+  // Check if yt-dlp binary exists on Render
+  if (!fs.existsSync(ytDlpBinary)) {
+    inFlightMap.delete(videoId);
+    rejectInFlight(new Error('yt-dlp binary not found'));
+    return res.status(500).json({ error: 'yt-dlp binary not found. Run postinstall.' });
   }
 
-  return res.status(500).json({ error: 'TUNNEL_URL not configured' });
+  try {
+    let data;
+    try {
+      data = await runYtDlpOnRender(videoId, poToken);
+    } catch (firstErr) {
+      console.warn('⚠️ First extraction attempt failed, retrying without poToken...', firstErr.message.slice(0, 100));
+      // Retry without poToken and with fallback client
+      data = await runYtDlpOnRender(videoId, null);
+    }
+
+    if (data && (data.title || Array.isArray(data.formats))) {
+      await setCached(cacheKey, data);
+      inFlightMap.delete(videoId);
+      resolveInFlight(data);
+      return res.json({ ...data, cached: false, tunneled: false });
+    } else {
+      throw new Error('yt-dlp returned empty/invalid data');
+    }
+  } catch (err) {
+    console.error('❌ yt-dlp extraction failed:', err.message.slice(0, 200));
+    inFlightMap.delete(videoId);
+    rejectInFlight(err);
+    return res.status(500).json({ error: err.message.slice(0, 300) });
+  }
 });
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Production Backend Proxy Server running on port ${PORT}`);
+  console.log(`🚀 Production Backend Server running on port ${PORT}`);
+  console.log(`🔧 yt-dlp binary: ${ytDlpBinary} | exists: ${fs.existsSync(ytDlpBinary)}`);
 });
