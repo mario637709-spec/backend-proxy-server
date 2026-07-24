@@ -251,6 +251,8 @@ app.get('/api/getVideoJson', async (req, res) => {
   inFlightPromise.catch(() => {});
   inFlightMap.set(videoId, inFlightPromise);
 
+  const poToken = req.query.poToken || req.body?.poToken;
+
   // 1c. If TUNNEL_URL is configured, forward request to Laptop API Bridge (bypasses datacenter IP blocks)
   const tunnelUrl = process.env.TUNNEL_URL;
   if (tunnelUrl) {
@@ -259,11 +261,18 @@ app.get('/api/getVideoJson', async (req, res) => {
       const targetUrl = `${cleanTunnel}/api/getVideoJson?videoId=${videoId}${poToken ? `&poToken=${poToken}` : ''}`;
       console.log('🌐 Forwarding extraction to Laptop Tunnel Bridge:', targetUrl);
       
+      const https = require('https');
+      const http = require('http');
+      const agent = targetUrl.startsWith('https') 
+        ? new https.Agent({ rejectUnauthorized: false })
+        : new http.Agent();
+
       const tunnelResponse = await fetch(targetUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
           'Accept': 'application/json'
         },
+        agent: agent,
         signal: AbortSignal.timeout(20000)
       });
       if (tunnelResponse.ok) {
@@ -295,20 +304,19 @@ app.get('/api/getVideoJson', async (req, res) => {
     });
   }
 
-  const poToken = req.query.poToken || req.body?.poToken;
-
   const ytDlpArgs = [
     '-J',                    // JSON output
     '--no-playlist',         // Single video only
     '--skip-download',       // Don't download, just extract
     '--no-warnings',         // Clean output
     '--geo-bypass',          // Bypass geo-restrictions
+    '--no-check-certificates'
   ];
 
   if (poToken) {
-    ytDlpArgs.push('--extractor-args', `youtube:player_client=mweb,ios,web,android_vr;po_token=web+${poToken}`);
+    ytDlpArgs.push('--extractor-args', `youtube:player_client=mweb,ios;po_token=web+${poToken}`);
   } else {
-    ytDlpArgs.push('--extractor-args', 'youtube:player_client=mweb,ios,android_vr,web');
+    ytDlpArgs.push('--extractor-args', 'youtube:player_client=mweb,ios');
   }
 
   // Support custom SOCKS5/HTTP proxy if explicitly configured in environment (supports both YT_DLP_PROXY and TUNNEL_URL)
