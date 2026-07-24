@@ -90,10 +90,11 @@ function runYtDlpOnRender(videoId, poToken) {
       '--no-check-certificates'
     ];
 
+    // android + ios clients bypass YouTube bot-detection even from datacenter IPs
     if (poToken) {
-      args.push('--extractor-args', `youtube:player_client=mweb,ios;po_token=web+${poToken}`);
+      args.push('--extractor-args', `youtube:player_client=android,ios,mweb;po_token=web+${poToken}`);
     } else {
-      args.push('--extractor-args', 'youtube:player_client=mweb,ios');
+      args.push('--extractor-args', 'youtube:player_client=android,ios,mweb');
     }
 
     args.push(videoUrl);
