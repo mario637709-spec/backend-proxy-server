@@ -303,6 +303,50 @@ app.get('/api/getVideoJson', async (req, res) => {
   }
 });
 
+app.get('/api/download', async (req, res) => {
+  const mediaUrl = req.query.url;
+  const filename = req.query.filename || 'media_download.mp4';
+
+  if (!mediaUrl || typeof mediaUrl !== 'string') {
+    return res.status(400).send('url parameter is required');
+  }
+
+  console.log(`📥 Download stream requested for: ${filename}`);
+
+  const safeFilename = filename.replace(/[/\\?%*:|"<>]/g, '_');
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeFilename)}"`);
+  res.setHeader('Content-Type', safeFilename.endsWith('.mp3') || safeFilename.endsWith('.m4a') ? 'audio/mpeg' : 'video/mp4');
+
+  try {
+    const fetchHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      'Accept': '*/*'
+    };
+
+    const mediaRes = await fetch(mediaUrl, { headers: fetchHeaders });
+    if (!mediaRes.ok) {
+      return res.status(mediaRes.status).send(`Failed to stream media: HTTP ${mediaRes.status}`);
+    }
+
+    if (mediaRes.headers.get('content-length')) {
+      res.setHeader('Content-Length', mediaRes.headers.get('content-length'));
+    }
+
+    const { Readable } = require('stream');
+    if (mediaRes.body.getReader) {
+      Readable.fromWeb(mediaRes.body).pipe(res);
+    } else if (typeof mediaRes.body.pipe === 'function') {
+      mediaRes.body.pipe(res);
+    } else {
+      const buffer = await mediaRes.arrayBuffer();
+      res.send(Buffer.from(buffer));
+    }
+  } catch (err) {
+    console.error('❌ Download streaming error:', err.message);
+    res.status(500).send(`Download streaming error: ${err.message}`);
+  }
+});
+
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Production Backend Server running on port ${PORT}`);
