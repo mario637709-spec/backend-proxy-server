@@ -124,12 +124,6 @@ function runYtDlpOnRender(videoId, poToken) {
       args.push('--cookies', cookiesPath);
     }
 
-    if (process.env.TUNNEL_URL) {
-      const httpProxyUrl = process.env.TUNNEL_URL.replace(/^https:/, 'http:');
-      args.push('--proxy', httpProxyUrl);
-      console.log(`🌐 Routing yt-dlp traffic through Tunnel Proxy: ${httpProxyUrl}`);
-    }
-
     // mweb + web + ios + android player_clients with cookies for reliable format extraction on datacenter IPs
     if (poToken) {
       args.push('--extractor-args', `youtube:player_client=mweb,web,ios,android;po_token=web+${poToken}`);
@@ -162,6 +156,71 @@ function runYtDlpOnRender(videoId, poToken) {
 
     proc.on('error', err => reject(new Error(`yt-dlp spawn error: ${err.message}`)));
   });
+}
+
+async function extractVideoData(videoId, poToken) {
+  // Strategy 1: Fetch HTML via Residential Proxy over Cloudflare Tunnel (0 bot detection, 0 laptop CPU!)
+  if (process.env.TUNNEL_URL && process.env.TUNNEL_URL.startsWith('http')) {
+    try {
+      const proxyFetchUrl = `${process.env.TUNNEL_URL}/proxy?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}`;
+      console.log(`🌐 Fetching YouTube HTML via Residential Proxy for videoId: ${videoId}`);
+      
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
+      
+      const response = await fetch(proxyFetchUrl, { signal: controller.signal });
+      clearTimeout(timer);
+
+      if (response.ok) {
+        const html = await response.text();
+        const startIdx = html.indexOf('ytInitialPlayerResponse = {');
+        if (startIdx !== -1) {
+          const jsonStart = startIdx + 'ytInitialPlayerResponse = '.length;
+          let braceCount = 0, endIdx = -1;
+          for (let i = jsonStart; i < html.length; i++) {
+            if (html[i] === '{') braceCount++;
+            else if (html[i] === '}') {
+              braceCount--;
+              if (braceCount === 0) { endIdx = i + 1; break; }
+            }
+          }
+          if (endIdx !== -1) {
+            const playerResponse = JSON.parse(html.slice(jsonStart, endIdx));
+            const videoDetails = playerResponse.videoDetails || {};
+            const formats = (playerResponse.streamingData?.formats || []).concat(playerResponse.streamingData?.adaptiveFormats || []);
+
+            if (videoDetails.title && formats.length > 0) {
+              console.log(`✅ Extracted ${formats.length} formats via Residential Proxy HTML parser!`);
+              return {
+                id: videoId,
+                title: videoDetails.title,
+                uploader: videoDetails.author,
+                duration: parseInt(videoDetails.lengthSeconds || '0'),
+                view_count: parseInt(videoDetails.viewCount || '0'),
+                thumbnail: videoDetails.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+                formats: formats.map(f => ({
+                  format_id: f.itag?.toString(),
+                  url: f.url || f.signatureCipher || f.cipher,
+                  ext: f.mimeType?.includes('audio') ? 'm4a' : 'mp4',
+                  width: f.width,
+                  height: f.height,
+                  filesize: parseInt(f.contentLength || '0'),
+                  vcodec: f.mimeType?.includes('video') ? 'h264' : 'none',
+                  acodec: f.mimeType?.includes('audio') ? 'aac' : 'none',
+                  format_note: f.qualityLabel || `${f.bitrate || 0}bps`
+                }))
+              };
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ Residential Proxy HTML extraction failed, falling back to yt-dlp:', err.message);
+    }
+  }
+
+  // Strategy 2: Direct yt-dlp on Render
+  return runYtDlpOnRender(videoId, poToken);
 }
 
 const inFlightMap = new Map();
@@ -212,11 +271,10 @@ app.get('/api/getVideoJson', async (req, res) => {
   try {
     let data;
     try {
-      data = await runYtDlpOnRender(videoId, poToken);
+      data = await extractVideoData(videoId, poToken);
     } catch (firstErr) {
       console.warn('⚠️ First extraction attempt failed, retrying without poToken...', firstErr.message.slice(0, 100));
-      // Retry without poToken and with fallback client
-      data = await runYtDlpOnRender(videoId, null);
+      data = await extractVideoData(videoId, null);
     }
 
     if (data && (data.title || Array.isArray(data.formats))) {
