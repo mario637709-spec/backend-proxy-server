@@ -351,7 +351,7 @@ app.get('/api/download', async (req, res) => {
     return res.status(400).send('url parameter is required');
   }
 
-  console.log(`📥 Download stream requested for: ${filename}`);
+  console.log(`📥 Download stream requested on Render (0 laptop bandwidth) for: ${filename}`);
 
   const safeFilename = filename.replace(/[/\\?%*:|"<>]/g, '_');
   res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeFilename)}"`);
@@ -363,17 +363,8 @@ app.get('/api/download', async (req, res) => {
       'Accept': '*/*'
     };
 
-    let fetchTarget = mediaUrl;
-    if (activeTunnelUrl && mediaUrl.includes('googlevideo.com')) {
-      fetchTarget = `${activeTunnelUrl}/proxy?url=${encodeURIComponent(mediaUrl)}`;
-      console.log(`🌐 Proxying media download stream through Residential Tunnel: ${activeTunnelUrl}`);
-    }
-
-    let mediaRes = await fetch(fetchTarget, { headers: fetchHeaders });
-    if (!mediaRes.ok && fetchTarget !== mediaUrl) {
-      console.warn(`⚠️ Tunnel download failed with HTTP ${mediaRes.status}, retrying direct fetch...`);
-      mediaRes = await fetch(mediaUrl, { headers: fetchHeaders });
-    }
+    // Direct stream from Render Cloud (0 Laptop Bandwidth!)
+    const mediaRes = await fetch(mediaUrl, { headers: fetchHeaders });
 
     if (!mediaRes.ok) {
       return res.status(mediaRes.status).send(`Failed to stream media: HTTP ${mediaRes.status}`);
