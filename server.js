@@ -269,7 +269,7 @@ app.get('/api/getVideoJson', async (req, res) => {
           'Accept': 'application/json',
           'Bypass-Tunnel-Reminder': 'true'
         },
-        signal: AbortSignal.timeout(25000)
+        signal: AbortSignal.timeout(60000)
       });
 
       const data = await tunnelResponse.json();
