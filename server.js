@@ -74,6 +74,12 @@ app.post('/api/updateTunnelUrl', (req, res) => {
   return res.status(400).json({ error: 'Invalid tunnelUrl provided' });
 });
 
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: 'Too many requests, please try again later.' }
+});
+
 app.use('/api/', apiLimiter);
 
 app.get('/api/debugCookies', (req, res) => {
