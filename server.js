@@ -74,16 +74,31 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Resolve yt-dlp binary path (downloaded via postinstall script)
-const ytDlpBinary = path.join(__dirname, os.platform() === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+app.get('/api/debugCookies', (req, res) => {
+  const envCookies = process.env.YT_COOKIES;
+  const tmpCookiesPath = path.join(os.tmpdir(), 'yt_cookies.txt');
+  const exists = fs.existsSync(tmpCookiesPath);
+  res.json({
+    hasEnvCookies: !!envCookies,
+    envCookiesSize: envCookies ? envCookies.length : 0,
+    tmpFileExists: exists,
+    tmpFileSize: exists ? fs.statSync(tmpCookiesPath).size : 0,
+    preview: envCookies ? envCookies.slice(0, 150) : null
+  });
+});
 
-// Write cookies to temp file if YT_COOKIES env var is set
-let cookiesFilePath = null;
-if (process.env.YT_COOKIES) {
-  const tmpCookies = path.join(os.tmpdir(), 'yt_cookies.txt');
-  fs.writeFileSync(tmpCookies, process.env.YT_COOKIES, 'utf8');
-  cookiesFilePath = tmpCookies;
-  console.log('🍪 YouTube cookies loaded from env var, size:', process.env.YT_COOKIES.length);
+// Helper to get or create cookies file path
+function getCookiesFilePath() {
+  if (process.env.YT_COOKIES) {
+    const tmpCookies = path.join(os.tmpdir(), 'yt_cookies.txt');
+    try {
+      fs.writeFileSync(tmpCookies, process.env.YT_COOKIES, 'utf8');
+      return tmpCookies;
+    } catch (e) {
+      console.warn('⚠️ Failed writing cookies file:', e.message);
+    }
+  }
+  return null;
 }
 
 function runYtDlpOnRender(videoId, poToken) {
@@ -99,9 +114,9 @@ function runYtDlpOnRender(videoId, poToken) {
       '--no-check-certificates'
     ];
 
-    // Use cookies if available (bypasses bot detection on datacenter IPs)
-    if (cookiesFilePath && fs.existsSync(cookiesFilePath)) {
-      args.push('--cookies', cookiesFilePath);
+    const cookiesPath = getCookiesFilePath();
+    if (cookiesPath && fs.existsSync(cookiesPath)) {
+      args.push('--cookies', cookiesPath);
     }
 
     // mweb + web + ios + android player_clients with cookies for reliable format extraction on datacenter IPs
