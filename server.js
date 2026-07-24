@@ -258,7 +258,7 @@ app.get('/api/getVideoJson', async (req, res) => {
   if (tunnelUrl) {
     try {
       const cleanTunnel = (tunnelUrl.startsWith('http://') || tunnelUrl.startsWith('https://') ? tunnelUrl : `https://${tunnelUrl}`).replace(/\/+$/, '');
-      const targetUrl = `${cleanTunnel}/api/getVideoJson?videoId=${videoId}${poToken ? `&poToken=${poToken}` : ''}`;
+      const targetUrl = `${cleanTunnel}/api/getVideoJson?videoId=${videoId}${poToken ? `&poToken=${encodeURIComponent(poToken)}` : ''}`;
       console.log('🌐 Forwarding extraction to Laptop Tunnel Bridge:', targetUrl);
       
       process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -271,19 +271,24 @@ app.get('/api/getVideoJson', async (req, res) => {
         },
         signal: AbortSignal.timeout(25000)
       });
-      if (tunnelResponse.ok) {
-        const data = await tunnelResponse.json();
-        if (data && (Array.isArray(data.formats) || data.title)) {
-          await setCached(cacheKey, data);
-          inFlightMap.delete(videoId);
-          resolveInFlight(data);
-          return res.json({ ...data, cached: false, tunneled: true });
-        }
+
+      const data = await tunnelResponse.json();
+      if (tunnelResponse.ok && data && (Array.isArray(data.formats) || data.title)) {
+        await setCached(cacheKey, data);
+        inFlightMap.delete(videoId);
+        resolveInFlight(data);
+        return res.json({ ...data, cached: false, tunneled: true });
       } else {
-        console.warn('⚠️ Tunnel Bridge returned status:', tunnelResponse.status);
+        console.warn('⚠️ Tunnel Bridge returned error:', data);
+        inFlightMap.delete(videoId);
+        rejectInFlight(new Error(data.error || 'Tunnel extraction failed'));
+        return res.status(tunnelResponse.status || 500).json(data);
       }
     } catch (tunnelErr) {
-      console.warn('⚠️ Tunnel Bridge failed, falling back to local yt-dlp:', tunnelErr.message);
+      console.warn('⚠️ Tunnel Bridge connection failed:', tunnelErr.message);
+      inFlightMap.delete(videoId);
+      rejectInFlight(tunnelErr);
+      return res.status(500).json({ error: `Tunnel bridge connection error: ${tunnelErr.message}` });
     }
   }
 
