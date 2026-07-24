@@ -62,18 +62,6 @@ async function setCached(key, value, ttlSeconds = 18000) {
   });
 }
 
-const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  message: { error: 'Too many requests, please try again later.' }
-});
-
-app.use('/api/', apiLimiter);
-
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
 let activeTunnelUrl = process.env.TUNNEL_URL || null;
 
 app.post('/api/updateTunnelUrl', (req, res) => {
@@ -85,6 +73,8 @@ app.post('/api/updateTunnelUrl', (req, res) => {
   }
   return res.status(400).json({ error: 'Invalid tunnelUrl provided' });
 });
+
+app.use('/api/', apiLimiter);
 
 app.get('/api/debugCookies', (req, res) => {
   const envCookies = process.env.YT_COOKIES;
