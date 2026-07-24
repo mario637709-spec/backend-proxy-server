@@ -253,6 +253,39 @@ app.get('/api/getVideoJson', async (req, res) => {
 
   const poToken = req.query.poToken || req.body?.poToken;
 
+  // 1c. If TUNNEL_URL is configured, forward request to Laptop API Bridge (bypasses datacenter IP blocks)
+  const tunnelUrl = process.env.TUNNEL_URL;
+  if (tunnelUrl) {
+    try {
+      const cleanTunnel = (tunnelUrl.startsWith('http://') || tunnelUrl.startsWith('https://') ? tunnelUrl : `https://${tunnelUrl}`).replace(/\/+$/, '');
+      const targetUrl = `${cleanTunnel}/api/getVideoJson?videoId=${videoId}${poToken ? `&poToken=${poToken}` : ''}`;
+      console.log('🌐 Forwarding extraction to Laptop Tunnel Bridge:', targetUrl);
+      
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+      const tunnelResponse = await fetch(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+          'Accept': 'application/json'
+        },
+        signal: AbortSignal.timeout(20000)
+      });
+      if (tunnelResponse.ok) {
+        const data = await tunnelResponse.json();
+        if (data && (Array.isArray(data.formats) || data.title)) {
+          await setCached(cacheKey, data);
+          inFlightMap.delete(videoId);
+          resolveInFlight(data);
+          return res.json({ ...data, cached: false, tunneled: true });
+        }
+      } else {
+        console.warn('⚠️ Tunnel Bridge returned status:', tunnelResponse.status);
+      }
+    } catch (tunnelErr) {
+      console.warn('⚠️ Tunnel Bridge failed, falling back to local yt-dlp:', tunnelErr.message);
+    }
+  }
+
   // 2. Extract using yt-dlp on Render
   const os = require('os');
   const ytDlpExecutable = os.platform() === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
