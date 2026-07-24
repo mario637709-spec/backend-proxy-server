@@ -16,30 +16,38 @@ const dest = path.join(__dirname, platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'
 
 console.log(`Downloading yt-dlp for ${platform} from ${url}...`);
 
-const file = fs.createWriteStream(dest);
-
-function download(url, destFile) {
-  https.get(url, (response) => {
-    if (response.statusCode === 301 || response.statusCode === 302) {
-      return download(response.headers.location, destFile);
-    }
-    
-    response.pipe(destFile);
-    
-    destFile.on('finish', () => {
-      destFile.close();
-      console.log('Download complete!');
-      
-      // Make executable on Linux/Mac
-      if (platform !== 'win32') {
-        fs.chmodSync(dest, 0o755);
-        console.log('Granted execute permissions.');
+function download(downloadUrl) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    https.get(downloadUrl, (response) => {
+      if (response.statusCode === 301 || response.statusCode === 302) {
+        file.close();
+        return resolve(download(response.headers.location));
       }
+      
+      response.pipe(file);
+      
+      file.on('finish', () => {
+        file.close(() => {
+          console.log('Download complete!');
+          if (platform !== 'win32') {
+            fs.chmodSync(dest, 0o755);
+            console.log('Granted execute permissions.');
+          }
+          resolve();
+        });
+      });
+    }).on('error', (err) => {
+      fs.unlink(dest, () => {});
+      console.error('Error downloading yt-dlp:', err.message);
+      reject(err);
     });
-  }).on('error', (err) => {
-    fs.unlink(dest, () => {});
-    console.error('Error downloading yt-dlp:', err.message);
   });
 }
 
-download(url, file);
+download(url)
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error('Download failed:', err);
+    process.exit(1);
+  });
