@@ -74,11 +74,24 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+let activeTunnelUrl = process.env.TUNNEL_URL || null;
+
+app.post('/api/updateTunnelUrl', (req, res) => {
+  const { tunnelUrl } = req.body || {};
+  if (tunnelUrl && typeof tunnelUrl === 'string' && tunnelUrl.startsWith('http')) {
+    activeTunnelUrl = tunnelUrl;
+    console.log(`📡 In-memory Tunnel URL updated to: ${activeTunnelUrl}`);
+    return res.json({ status: 'ok', activeTunnelUrl });
+  }
+  return res.status(400).json({ error: 'Invalid tunnelUrl provided' });
+});
+
 app.get('/api/debugCookies', (req, res) => {
   const envCookies = process.env.YT_COOKIES;
   const tmpCookiesPath = getCookiesFilePath();
   const exists = tmpCookiesPath ? fs.existsSync(tmpCookiesPath) : false;
   res.json({
+    activeTunnelUrl,
     hasEnvCookies: !!envCookies,
     envCookiesSize: envCookies ? envCookies.length : 0,
     tmpFileExists: exists,
@@ -159,11 +172,12 @@ function runYtDlpOnRender(videoId, poToken) {
 }
 
 async function extractVideoData(videoId, poToken) {
+  const targetTunnel = activeTunnelUrl || process.env.TUNNEL_URL;
   // Strategy 1: Fetch HTML via Residential Proxy over Cloudflare Tunnel (0 bot detection, 0 laptop CPU!)
-  if (process.env.TUNNEL_URL && process.env.TUNNEL_URL.startsWith('http')) {
+  if (targetTunnel && typeof targetTunnel === 'string' && targetTunnel.startsWith('http')) {
     try {
-      const proxyFetchUrl = `${process.env.TUNNEL_URL}/proxy?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}`;
-      console.log(`🌐 Fetching YouTube HTML via Residential Proxy for videoId: ${videoId}`);
+      const proxyFetchUrl = `${targetTunnel}/proxy?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}`;
+      console.log(`🌐 Fetching YouTube HTML via Residential Proxy (${targetTunnel}) for videoId: ${videoId}`);
       
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10000);
