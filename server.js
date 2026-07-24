@@ -351,28 +351,37 @@ app.get('/api/download', async (req, res) => {
     return res.status(400).send('url parameter is required');
   }
 
-  console.log(`📥 Download stream requested on Render (0 laptop bandwidth) for: ${filename}`);
-
   const safeFilename = filename.replace(/[/\\?%*:|"<>]/g, '_');
-  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeFilename)}"`);
-  res.setHeader('Content-Type', safeFilename.endsWith('.mp3') || safeFilename.endsWith('.m4a') ? 'audio/mpeg' : 'video/mp4');
+  console.log(`📥 Download requested for [${safeFilename}], Range: ${req.headers.range || 'full'}`);
 
   try {
     const fetchHeaders = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-      'Accept': '*/*'
+      'Accept': '*/*',
+      'Accept-Encoding': 'identity',
+      'Connection': 'keep-alive'
     };
 
-    // Direct stream from Render Cloud (0 Laptop Bandwidth!)
+    if (req.headers.range) {
+      fetchHeaders['Range'] = req.headers.range;
+    }
+
     const mediaRes = await fetch(mediaUrl, { headers: fetchHeaders });
 
-    if (!mediaRes.ok) {
-      return res.status(mediaRes.status).send(`Failed to stream media: HTTP ${mediaRes.status}`);
+    if (!mediaRes.ok && mediaRes.status !== 206) {
+      console.error(`❌ YouTube CDN returned status ${mediaRes.status} for ${safeFilename}`);
+      return res.status(mediaRes.status).send(`YouTube CDN returned HTTP ${mediaRes.status}`);
     }
 
-    if (mediaRes.headers.get('content-length')) {
-      res.setHeader('Content-Length', mediaRes.headers.get('content-length'));
-    }
+    res.status(mediaRes.status);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeFilename)}"`);
+    res.setHeader('Content-Type', safeFilename.endsWith('.mp3') || safeFilename.endsWith('.m4a') ? 'audio/mpeg' : 'video/mp4');
+
+    const headersToForward = ['content-length', 'content-range', 'accept-ranges'];
+    headersToForward.forEach(h => {
+      const val = mediaRes.headers.get(h);
+      if (val) res.setHeader(h, val);
+    });
 
     const { Readable } = require('stream');
     if (mediaRes.body.getReader) {
@@ -385,7 +394,9 @@ app.get('/api/download', async (req, res) => {
     }
   } catch (err) {
     console.error('❌ Download streaming error:', err.message);
-    res.status(500).send(`Download streaming error: ${err.message}`);
+    if (!res.headersSent) {
+      res.status(500).send(`Download streaming error: ${err.message}`);
+    }
   }
 });
 
