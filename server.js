@@ -261,18 +261,13 @@ app.get('/api/getVideoJson', async (req, res) => {
       const targetUrl = `${cleanTunnel}/api/getVideoJson?videoId=${videoId}${poToken ? `&poToken=${poToken}` : ''}`;
       console.log('🌐 Forwarding extraction to Laptop Tunnel Bridge:', targetUrl);
       
-      const https = require('https');
-      const http = require('http');
-      const agent = targetUrl.startsWith('https') 
-        ? new https.Agent({ rejectUnauthorized: false })
-        : new http.Agent();
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
       const tunnelResponse = await fetch(targetUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
           'Accept': 'application/json'
         },
-        agent: agent,
         signal: AbortSignal.timeout(20000)
       });
       if (tunnelResponse.ok) {
