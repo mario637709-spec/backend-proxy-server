@@ -104,11 +104,11 @@ function runYtDlpOnRender(videoId, poToken) {
       args.push('--cookies', cookiesFilePath);
     }
 
-    // android + ios clients bypass YouTube bot-detection even from datacenter IPs
+    // mweb + web + ios + android player_clients with cookies for reliable format extraction on datacenter IPs
     if (poToken) {
-      args.push('--extractor-args', `youtube:player_client=android,ios,mweb;po_token=web+${poToken}`);
+      args.push('--extractor-args', `youtube:player_client=mweb,web,ios,android;po_token=web+${poToken}`);
     } else {
-      args.push('--extractor-args', 'youtube:player_client=android,ios,mweb');
+      args.push('--extractor-args', 'youtube:player_client=mweb,web,ios,android');
     }
 
     args.push(videoUrl);
