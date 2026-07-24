@@ -77,6 +77,15 @@ app.get('/health', (req, res) => {
 // Resolve yt-dlp binary path (downloaded via postinstall script)
 const ytDlpBinary = path.join(__dirname, os.platform() === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
 
+// Write cookies to temp file if YT_COOKIES env var is set
+let cookiesFilePath = null;
+if (process.env.YT_COOKIES) {
+  const tmpCookies = path.join(os.tmpdir(), 'yt_cookies.txt');
+  fs.writeFileSync(tmpCookies, process.env.YT_COOKIES, 'utf8');
+  cookiesFilePath = tmpCookies;
+  console.log('🍪 YouTube cookies loaded from env var, size:', process.env.YT_COOKIES.length);
+}
+
 function runYtDlpOnRender(videoId, poToken) {
   return new Promise((resolve, reject) => {
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
@@ -89,6 +98,11 @@ function runYtDlpOnRender(videoId, poToken) {
       '--geo-bypass',
       '--no-check-certificates'
     ];
+
+    // Use cookies if available (bypasses bot detection on datacenter IPs)
+    if (cookiesFilePath && fs.existsSync(cookiesFilePath)) {
+      args.push('--cookies', cookiesFilePath);
+    }
 
     // android + ios clients bypass YouTube bot-detection even from datacenter IPs
     if (poToken) {
