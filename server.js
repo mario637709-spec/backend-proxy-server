@@ -253,55 +253,16 @@ app.get('/api/getVideoJson', async (req, res) => {
 
   const poToken = req.query.poToken || req.body?.poToken;
 
-  // 1c. If TUNNEL_URL is configured, forward request to Laptop API Bridge (bypasses datacenter IP blocks)
-  const tunnelUrl = process.env.TUNNEL_URL;
-  if (tunnelUrl) {
-    try {
-      const cleanTunnel = (tunnelUrl.startsWith('http://') || tunnelUrl.startsWith('https://') ? tunnelUrl : `https://${tunnelUrl}`).replace(/\/+$/, '');
-      const targetUrl = `${cleanTunnel}/api/getVideoJson?videoId=${videoId}${poToken ? `&poToken=${encodeURIComponent(poToken)}` : ''}`;
-      console.log('🌐 Forwarding extraction to Laptop Tunnel Bridge:', targetUrl);
-      
-      process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
-      const tunnelResponse = await fetch(targetUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-          'Accept': 'application/json',
-          'Bypass-Tunnel-Reminder': 'true'
-        },
-        signal: AbortSignal.timeout(60000)
-      });
-
-      const data = await tunnelResponse.json();
-      if (tunnelResponse.ok && data && (Array.isArray(data.formats) || data.title)) {
-        await setCached(cacheKey, data);
-        inFlightMap.delete(videoId);
-        resolveInFlight(data);
-        return res.json({ ...data, cached: false, tunneled: true });
-      } else {
-        console.warn('⚠️ Tunnel Bridge returned error:', data);
-        inFlightMap.delete(videoId);
-        rejectInFlight(new Error(data.error || 'Tunnel extraction failed'));
-        return res.status(tunnelResponse.status || 500).json(data);
-      }
-    } catch (tunnelErr) {
-      console.warn('⚠️ Tunnel Bridge connection failed:', tunnelErr.message);
-      inFlightMap.delete(videoId);
-      rejectInFlight(tunnelErr);
-      return res.status(500).json({ error: `Tunnel bridge connection error: ${tunnelErr.message}` });
-    }
-  }
-
   // 2. Extract using yt-dlp on Render
   const os = require('os');
   const ytDlpExecutable = os.platform() === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
   const ytDlpPath = os.platform() === 'win32' ? '.\\yt-dlp.exe' : path.join(__dirname, ytDlpExecutable);
 
-  // Check if yt-dlp exists
+  // Check if yt-dlp exists, if not attempt fallback or error
   if (!fs.existsSync(ytDlpPath)) {
     console.error('❌ yt-dlp not found at:', ytDlpPath);
     return res.status(500).json({ 
-      error: 'yt-dlp binary not found. Run: node download-ytdlp.js' 
+      error: 'yt-dlp binary not found on Render. Run: node download-ytdlp.js' 
     });
   }
 
@@ -318,6 +279,14 @@ app.get('/api/getVideoJson', async (req, res) => {
     ytDlpArgs.push('--extractor-args', `youtube:player_client=mweb,ios;po_token=web+${poToken}`);
   } else {
     ytDlpArgs.push('--extractor-args', 'youtube:player_client=mweb,ios');
+  }
+
+  // Inject Laptop Proxy Tunnel into Render yt-dlp if TUNNEL_URL is present
+  const tunnelUrl = process.env.TUNNEL_URL;
+  if (tunnelUrl) {
+    const cleanTunnel = (tunnelUrl.startsWith('http://') || tunnelUrl.startsWith('https://') ? tunnelUrl : `http://${tunnelUrl}`).replace(/\/+$/, '');
+    ytDlpArgs.push('--proxy', cleanTunnel);
+    console.log('🌐 Render yt-dlp routing via Laptop Proxy Tunnel:', cleanTunnel);
   }
 
   // Securely load cookies if present (required for cloud hosting like Render to bypass bot blocks)
