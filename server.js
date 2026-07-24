@@ -208,17 +208,25 @@ async function extractVideoData(videoId, poToken) {
                 duration: parseInt(videoDetails.lengthSeconds || '0'),
                 view_count: parseInt(videoDetails.viewCount || '0'),
                 thumbnail: videoDetails.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
-                formats: formats.map(f => ({
-                  format_id: f.itag?.toString(),
-                  url: f.url || f.signatureCipher || f.cipher,
-                  ext: f.mimeType?.includes('audio') ? 'm4a' : 'mp4',
-                  width: f.width,
-                  height: f.height,
-                  filesize: parseInt(f.contentLength || '0'),
-                  vcodec: f.mimeType?.includes('video') ? 'h264' : 'none',
-                  acodec: f.mimeType?.includes('audio') ? 'aac' : 'none',
-                  format_note: f.qualityLabel || `${f.bitrate || 0}bps`
-                }))
+                formats: formats.map(f => {
+                  let streamUrl = f.url;
+                  if (!streamUrl && (f.signatureCipher || f.cipher)) {
+                    try {
+                      streamUrl = new URLSearchParams(f.signatureCipher || f.cipher).get('url');
+                    } catch (e) {}
+                  }
+                  return {
+                    format_id: f.itag?.toString(),
+                    url: streamUrl || `https://www.youtube.com/watch?v=${videoId}`,
+                    ext: f.mimeType?.includes('audio') ? 'm4a' : 'mp4',
+                    width: f.width,
+                    height: f.height,
+                    filesize: parseInt(f.contentLength || '0'),
+                    vcodec: f.mimeType?.includes('video') ? 'h264' : 'none',
+                    acodec: f.mimeType?.includes('audio') ? 'aac' : 'none',
+                    format_note: f.qualityLabel || `${f.bitrate || 0}bps`
+                  };
+                })
               };
             }
           }
