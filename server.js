@@ -95,7 +95,8 @@ function getCookiesFilePath() {
   if (process.env.YT_COOKIES) {
     const tmpCookies = path.join(os.tmpdir(), 'yt_cookies.txt');
     try {
-      fs.writeFileSync(tmpCookies, process.env.YT_COOKIES, 'utf8');
+      const cleanCookies = process.env.YT_COOKIES.replace(/\r\n/g, '\n');
+      fs.writeFileSync(tmpCookies, cleanCookies, 'utf8');
       return tmpCookies;
     } catch (e) {
       console.warn('⚠️ Failed writing cookies file:', e.message);
