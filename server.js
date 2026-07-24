@@ -21,6 +21,10 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'Bypass-Tunnel-Reminder', 'ngrok-skip-browser-warning', 'x-requested-with']
 }));
 
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', activeTunnelUrl, timestamp: new Date().toISOString() });
+});
+
 let redisClient = null;
 if (process.env.REDIS_URL) {
   redisClient = new Redis(process.env.REDIS_URL, {
@@ -331,7 +335,18 @@ app.get('/api/download', async (req, res) => {
       'Accept': '*/*'
     };
 
-    const mediaRes = await fetch(mediaUrl, { headers: fetchHeaders });
+    let fetchTarget = mediaUrl;
+    if (activeTunnelUrl && mediaUrl.includes('googlevideo.com')) {
+      fetchTarget = `${activeTunnelUrl}/proxy?url=${encodeURIComponent(mediaUrl)}`;
+      console.log(`🌐 Proxying media download stream through Residential Tunnel: ${activeTunnelUrl}`);
+    }
+
+    let mediaRes = await fetch(fetchTarget, { headers: fetchHeaders });
+    if (!mediaRes.ok && fetchTarget !== mediaUrl) {
+      console.warn(`⚠️ Tunnel download failed with HTTP ${mediaRes.status}, retrying direct fetch...`);
+      mediaRes = await fetch(mediaUrl, { headers: fetchHeaders });
+    }
+
     if (!mediaRes.ok) {
       return res.status(mediaRes.status).send(`Failed to stream media: HTTP ${mediaRes.status}`);
     }
