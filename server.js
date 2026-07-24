@@ -124,6 +124,11 @@ function runYtDlpOnRender(videoId, poToken) {
       args.push('--cookies', cookiesPath);
     }
 
+    if (process.env.TUNNEL_URL && process.env.TUNNEL_URL.startsWith('http')) {
+      args.push('--proxy', process.env.TUNNEL_URL);
+      console.log(`🌐 Routing yt-dlp traffic through Tunnel Proxy: ${process.env.TUNNEL_URL}`);
+    }
+
     // mweb + web + ios + android player_clients with cookies for reliable format extraction on datacenter IPs
     if (poToken) {
       args.push('--extractor-args', `youtube:player_client=mweb,web,ios,android;po_token=web+${poToken}`);
