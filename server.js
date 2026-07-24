@@ -284,7 +284,7 @@ app.get('/api/getVideoJson', async (req, res) => {
   // Inject Laptop Proxy Tunnel into Render yt-dlp if TUNNEL_URL is present
   const tunnelUrl = process.env.TUNNEL_URL;
   if (tunnelUrl) {
-    const cleanTunnel = (tunnelUrl.startsWith('http://') || tunnelUrl.startsWith('https://') ? tunnelUrl : `http://${tunnelUrl}`).replace(/\/+$/, '');
+    const cleanTunnel = 'http://' + tunnelUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '');
     ytDlpArgs.push('--proxy', cleanTunnel);
     console.log('🌐 Render yt-dlp routing via Laptop Proxy Tunnel:', cleanTunnel);
   }
