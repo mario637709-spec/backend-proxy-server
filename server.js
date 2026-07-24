@@ -171,10 +171,37 @@ function runYtDlpOnRender(videoId, poToken) {
   });
 }
 
+class ConcurrencyQueue {
+  constructor(maxConcurrent = 4) {
+    this.maxConcurrent = maxConcurrent;
+    this.activeCount = 0;
+    this.queue = [];
+  }
+
+  async run(fn) {
+    if (this.activeCount >= this.maxConcurrent) {
+      await new Promise(resolve => this.queue.push(resolve));
+    }
+    this.activeCount++;
+    try {
+      return await fn();
+    } finally {
+      this.activeCount--;
+      if (this.queue.length > 0) {
+        const next = this.queue.shift();
+        next();
+      }
+    }
+  }
+}
+
+const extractionQueue = new ConcurrencyQueue(4);
+
 async function extractVideoData(videoId, poToken) {
-  const targetTunnel = activeTunnelUrl || process.env.TUNNEL_URL;
-  // Strategy 1: Fetch HTML via Residential Proxy over Cloudflare Tunnel (0 bot detection, 0 laptop CPU!)
-  if (targetTunnel && typeof targetTunnel === 'string' && targetTunnel.startsWith('http')) {
+  return extractionQueue.run(async () => {
+    const targetTunnel = activeTunnelUrl || process.env.TUNNEL_URL;
+    // Strategy 1: Fetch HTML via Residential Proxy over Cloudflare Tunnel (0 bot detection, 0 laptop CPU!)
+    if (targetTunnel && typeof targetTunnel === 'string' && targetTunnel.startsWith('http')) {
     try {
       const proxyFetchUrl = `${targetTunnel}/proxy?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}`;
       console.log(`🌐 Fetching YouTube HTML via Residential Proxy (${targetTunnel}) for videoId: ${videoId}`);
@@ -243,6 +270,7 @@ async function extractVideoData(videoId, poToken) {
 
   // Strategy 2: Direct yt-dlp on Render
   return runYtDlpOnRender(videoId, poToken);
+  });
 }
 
 const inFlightMap = new Map();
