@@ -3,7 +3,7 @@ import json
 import yt_dlp
 import argparse
 
-def fetch(url, po_token=None, visitor_data=None):
+def fetch(url, po_token=None, visitor_data=None, cookies_file=None):
     ydl_opts = {
         'quiet': True,
         'dump_single_json': True,
@@ -11,6 +11,9 @@ def fetch(url, po_token=None, visitor_data=None):
         'no_warnings': True,
     }
     
+    if cookies_file:
+        ydl_opts['cookiefile'] = cookies_file
+        
     extractor_args = []
     if po_token:
         extractor_args.append(f'po_token=web+{po_token}')
@@ -31,10 +34,11 @@ def fetch(url, po_token=None, visitor_data=None):
         sys.exit(1)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("url", help="YouTube URL")
-    parser.add_argument("--po-token", help="PO Token")
-    parser.add_argument("--visitor-data", help="Visitor Data")
-    args = parser.parse_args()
+    parser = argparse.ArgumentParser(description='Fetch YouTube video info.')
+    parser.add_argument('url', help='YouTube video URL')
+    parser.add_argument('--po-token', help='PO Token')
+    parser.add_argument('--visitor-data', help='Visitor Data')
+    parser.add_argument('--cookies', help='Path to cookies file')
     
-    fetch(args.url, po_token=args.po_token, visitor_data=args.visitor_data)
+    args = parser.parse_args()
+    fetch(args.url, po_token=args.po_token, visitor_data=args.visitor_data, cookies_file=args.cookies)
