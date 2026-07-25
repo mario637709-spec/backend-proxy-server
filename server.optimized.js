@@ -6,11 +6,14 @@
 // 4. Health checks
 // 5. Proper error handling
 
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { spawn } = require('child_process');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const fs = require('fs');
+const { Readable } = require('stream');
 const Redis = require('ioredis');
 
 const app = express();
@@ -48,11 +51,16 @@ async function getCached(key) {
 
 async function setCached(key, value, ttl = 7200) {
   try {
-    await redis.setex(key, ttl, JSON.stringify(value));
+    if (redis.status === 'ready') {
+      await redis.setex(key, ttl, JSON.stringify(value));
+    } else {
+      throw new Error('Redis not ready');
+    }
   } catch (err) {
     console.warn('Redis write failed, using memory cache');
     memoryCache.set(key, value);
-    setTimeout(() => memoryCache.delete(key), ttl * 1000);
+    if (value._timeout) clearTimeout(value._timeout);
+    value._timeout = setTimeout(() => memoryCache.delete(key), ttl * 1000);
   }
 }
 
@@ -109,30 +117,11 @@ app.get('/api/getVideoJson', async (req, res) => {
 
   console.log('⏳ Cache MISS, extracting:', videoId);
 
-  // 2. Extract using yt-dlp
+  // 2. Extract using yt-dlp Python Library
   const os = require('os');
-  const ytDlpExecutable = os.platform() === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
-  const ytDlpPath = path.join(__dirname, ytDlpExecutable);
-
-  const poToken = req.query.poToken || req.body?.poToken;
-
-  const ytDlpArgs = [
-    '-J',
-    '--no-playlist',
-    '--skip-download',
-    '--no-warnings',
-    '--geo-bypass',
-  ];
-
-  if (poToken) {
-    ytDlpArgs.push('--extractor-args', `youtube:player_client=mweb,ios,web,android_vr;po_token=web+${poToken}`);
-  } else {
-    ytDlpArgs.push('--extractor-args', 'youtube:player_client=mweb,ios,android_vr,web');
-  }
-
-  if (process.env.YT_DLP_PROXY) {
-    ytDlpArgs.push('--proxy', process.env.YT_DLP_PROXY);
-  }
+  const ytDlpPath = os.platform() === 'win32' ? 'python' : 'python3';
+  const pyScript = path.join(__dirname, 'yt_fetch.py');
+  const ytDlpArgs = [pyScript, url];
 
   // Check for cookies file
   let cookiesPath = process.env.YT_DLP_COOKIES_PATH;
@@ -148,11 +137,12 @@ app.get('/api/getVideoJson', async (req, res) => {
     ytDlpArgs.push('--cookies', cookiesPath);
   }
 
-  ytDlpArgs.push(url);
-
-  const ytDlpProcess = spawn(ytDlpPath, ytDlpArgs, {
-    timeout: 30000 // 30 second timeout
-  });
+  const ytDlpProcess = spawn(ytDlpPath, ytDlpArgs);
+  
+  // Custom timeout implementation since spawn options timeout is ignored
+  const killTimeout = setTimeout(() => {
+    ytDlpProcess.kill('SIGKILL');
+  }, 45000);
 
   let stdoutData = '';
   let stderrData = '';
@@ -166,6 +156,7 @@ app.get('/api/getVideoJson', async (req, res) => {
   });
 
   ytDlpProcess.on('close', async (code) => {
+    clearTimeout(killTimeout);
     if (code === 0) {
       try {
         const info = JSON.parse(stdoutData);
@@ -212,32 +203,32 @@ app.get('/api/getVideoJson', async (req, res) => {
 
       } catch (e) {
         console.error('❌ Parse error:', e);
-      // Specific error messages
-      let errorMsg = 'Failed to extract video information';
-      if (stderrData.includes('Video unavailable')) {
-        errorMsg = 'Video is unavailable or private';
-      } else if (stderrData.includes('Sign in')) {
-        errorMsg = 'Video requires authentication';
-      } else if (stderrData.includes('blocked')) {
-        errorMsg = 'Video is blocked in your region';
-      }
+        let errorMsg = 'Failed to extract video information';
+        if (stderrData.includes('Video unavailable')) {
+          errorMsg = 'Video is unavailable or private';
+        } else if (stderrData.includes('Sign in')) {
+          errorMsg = 'Video requires authentication';
+        } else if (stderrData.includes('blocked')) {
+          errorMsg = 'Video is blocked in your region';
+        }
+        return res.status(500).json({ error: errorMsg });
       }
     } else {
       console.error(`❌ yt-dlp error (code ${code}):`, stderrData);
       
       // Fallback: If Render IP is blocked by YouTube, fetch via local Ngrok IP tunnel
+      const tunnelUrl = process.env.TUNNEL_URL;
       if (tunnelUrl && !req.query.fromTunnel) {
         console.log(`🌐 Primary extraction failed on Render. Falling back to IP tunnel: ${tunnelUrl}`);
-        const axios = require('axios');
         try {
-          const tunnelRes = await axios.get(`${tunnelUrl}/api/getVideoJson?videoId=${videoId}&fromTunnel=true`, {
-            timeout: 20000,
+          const tunnelRes = await fetch(`${tunnelUrl}/api/getVideoJson?videoId=${videoId}&fromTunnel=true`, {
             headers: { 'ngrok-skip-browser-warning': '69420' }
           });
-          if (tunnelRes.data && tunnelRes.data.formats) {
+          const tunnelData = await tunnelRes.json();
+          if (tunnelData && tunnelData.formats) {
             console.log(`✅ Tunnel fallback successful for video ${videoId}`);
-            await setCached(cacheKey, tunnelRes.data, 5 * 60 * 60);
-            return res.json({ ...tunnelRes.data, tunneled: true });
+            await setCached(cacheKey, tunnelData, 5 * 60 * 60);
+            return res.json({ ...tunnelData, tunneled: true });
           }
         } catch (tunnelErr) {
           console.error('❌ Tunnel fallback failed:', tunnelErr.message);
@@ -332,11 +323,12 @@ app.get('/api/download', async (req, res) => {
 // ============================================
 app.get('/api/stats', async (req, res) => {
   try {
-    const totalRequests = await redis.get('stats:total_requests') || 0;
-    const cacheHits = await redis.get('stats:cache_hits') || 0;
-    const cacheMisses = await redis.get('stats:cache_misses') || 0;
-    const cacheHitRate = cacheMisses > 0 
-      ? ((cacheHits / (cacheHits + cacheMisses)) * 100).toFixed(2) 
+    const totalRequests = Number(await redis.get('stats:total_requests')) || 0;
+    const cacheHits = Number(await redis.get('stats:cache_hits')) || 0;
+    const cacheMisses = Number(await redis.get('stats:cache_misses')) || 0;
+    const totalCache = cacheHits + cacheMisses;
+    const cacheHitRate = totalCache > 0 
+      ? ((cacheHits / totalCache) * 100).toFixed(2) 
       : 0;
 
     res.json({
