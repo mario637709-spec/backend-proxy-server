@@ -207,7 +207,7 @@ async function extractVideoData(videoId, poToken) {
       console.log(`🌐 Fetching YouTube HTML via Residential Proxy (${targetTunnel}) for videoId: ${videoId}`);
       
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 20000);
+      const timer = setTimeout(() => controller.abort(), 35000);
       
       const response = await fetch(proxyFetchUrl, { signal: controller.signal });
       clearTimeout(timer);
