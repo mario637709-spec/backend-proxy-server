@@ -400,7 +400,11 @@ app.get('/api/download', (req, res) => {
 
 function streamResponseToClient(proxyRes, res, safeFilename) {
   res.status(proxyRes.statusCode);
-  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeFilename)}"`);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Range');
+  
+  const asciiFilename = safeFilename.replace(/[^a-zA-Z0-9._-]/g, '_');
+  res.setHeader('Content-Disposition', `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}`);
   res.setHeader('Content-Type', safeFilename.endsWith('.mp3') || safeFilename.endsWith('.m4a') ? 'audio/mpeg' : 'video/mp4');
 
   const headersToForward = ['content-length', 'content-range', 'accept-ranges'];
