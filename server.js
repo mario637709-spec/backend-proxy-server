@@ -105,6 +105,9 @@ app.get('/api/getVideoJson', async (req, res) => {
     return res.status(400).json({ error: 'videoId is required' });
   }
 
+  const poToken = req.query.poToken || req.body?.poToken;
+  const visitorData = req.query.visitorData || req.body?.visitorData;
+
   const url = `https://www.youtube.com/watch?v=${videoId}`;
   const cacheKey = `video:${videoId}`;
 
@@ -122,6 +125,13 @@ app.get('/api/getVideoJson', async (req, res) => {
   const ytDlpPath = os.platform() === 'win32' ? 'python' : 'python3';
   const pyScript = path.join(__dirname, 'yt_fetch.py');
   const ytDlpArgs = [pyScript, url];
+  
+  if (poToken) {
+    ytDlpArgs.push('--po-token', poToken);
+  }
+  if (visitorData) {
+    ytDlpArgs.push('--visitor-data', visitorData);
+  }
 
   // Check for cookies file
   let cookiesPath = process.env.YT_DLP_COOKIES_PATH;
