@@ -343,7 +343,7 @@ app.get('/api/getVideoJson', async (req, res) => {
   }
 });
 
-app.get('/api/download', async (req, res) => {
+app.get('/api/download', (req, res) => {
   const mediaUrl = req.query.url;
   const filename = req.query.filename || 'media_download.mp4';
 
@@ -354,61 +354,68 @@ app.get('/api/download', async (req, res) => {
   const safeFilename = filename.replace(/[/\\?%*:|"<>]/g, '_');
   console.log(`📥 Download requested for [${safeFilename}], Range: ${req.headers.range || 'full'}`);
 
-  try {
-    const fetchHeaders = {
+  let fetchTarget = mediaUrl;
+  if (activeTunnelUrl && mediaUrl.includes('googlevideo.com')) {
+    fetchTarget = `${activeTunnelUrl}/proxy?url=${encodeURIComponent(mediaUrl)}`;
+    console.log(`🌐 Proxying media download stream through Residential Tunnel: ${activeTunnelUrl}`);
+  }
+
+  const httpModule = fetchTarget.startsWith('https') ? require('https') : require('http');
+
+  const options = {
+    headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
       'Accept': '*/*',
-      'Accept-Encoding': 'identity',
-      'Connection': 'keep-alive'
-    };
+      'Accept-Encoding': 'identity'
+    }
+  };
 
-    if (req.headers.range) {
-      fetchHeaders['Range'] = req.headers.range;
+  if (req.headers.range) {
+    options.headers['Range'] = req.headers.range;
+  }
+
+  const proxyReq = httpModule.get(fetchTarget, options, (proxyRes) => {
+    if (proxyRes.statusCode >= 400 && fetchTarget !== mediaUrl) {
+      console.warn(`⚠️ Tunnel download returned HTTP ${proxyRes.statusCode}, retrying direct fetch...`);
+      const directModule = mediaUrl.startsWith('https') ? require('https') : require('http');
+      const directReq = directModule.get(mediaUrl, options, (directRes) => {
+        streamResponseToClient(directRes, res, safeFilename);
+      });
+      directReq.setTimeout(0);
+      return;
     }
 
-    let fetchTarget = mediaUrl;
-    if (activeTunnelUrl && mediaUrl.includes('googlevideo.com')) {
-      fetchTarget = `${activeTunnelUrl}/proxy?url=${encodeURIComponent(mediaUrl)}`;
-      console.log(`🌐 Proxying media download stream through Residential Tunnel: ${activeTunnelUrl}`);
-    }
+    streamResponseToClient(proxyRes, res, safeFilename);
+  });
 
-    let mediaRes = await fetch(fetchTarget, { headers: fetchHeaders });
-    if (!mediaRes.ok && fetchTarget !== mediaUrl && mediaRes.status !== 206) {
-      console.warn(`⚠️ Tunnel download returned HTTP ${mediaRes.status}, retrying direct fetch...`);
-      mediaRes = await fetch(mediaUrl, { headers: fetchHeaders });
-    }
+  proxyReq.setTimeout(0); // 100% infinite timeout for zero early download cancellations!
 
-    if (!mediaRes.ok && mediaRes.status !== 206) {
-      console.error(`❌ YouTube CDN returned status ${mediaRes.status} for ${safeFilename}`);
-      return res.status(mediaRes.status).send(`YouTube CDN returned HTTP ${mediaRes.status}`);
-    }
-
-    res.status(mediaRes.status);
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeFilename)}"`);
-    res.setHeader('Content-Type', safeFilename.endsWith('.mp3') || safeFilename.endsWith('.m4a') ? 'audio/mpeg' : 'video/mp4');
-
-    const headersToForward = ['content-length', 'content-range', 'accept-ranges'];
-    headersToForward.forEach(h => {
-      const val = mediaRes.headers.get(h);
-      if (val) res.setHeader(h, val);
-    });
-
-    const { Readable } = require('stream');
-    if (mediaRes.body.getReader) {
-      Readable.fromWeb(mediaRes.body).pipe(res);
-    } else if (typeof mediaRes.body.pipe === 'function') {
-      mediaRes.body.pipe(res);
-    } else {
-      const buffer = await mediaRes.arrayBuffer();
-      res.send(Buffer.from(buffer));
-    }
-  } catch (err) {
+  proxyReq.on('error', (err) => {
     console.error('❌ Download streaming error:', err.message);
     if (!res.headersSent) {
       res.status(500).send(`Download streaming error: ${err.message}`);
     }
-  }
+  });
 });
+
+function streamResponseToClient(proxyRes, res, safeFilename) {
+  res.status(proxyRes.statusCode);
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeFilename)}"`);
+  res.setHeader('Content-Type', safeFilename.endsWith('.mp3') || safeFilename.endsWith('.m4a') ? 'audio/mpeg' : 'video/mp4');
+
+  const headersToForward = ['content-length', 'content-range', 'accept-ranges'];
+  headersToForward.forEach(h => {
+    if (proxyRes.headers[h]) {
+      res.setHeader(h, proxyRes.headers[h]);
+    }
+  });
+
+  proxyRes.pipe(res);
+
+  proxyRes.on('error', (err) => {
+    console.error('❌ Stream pipe error:', err.message);
+  });
+}
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, '0.0.0.0', () => {
