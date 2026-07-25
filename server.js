@@ -366,7 +366,17 @@ app.get('/api/download', async (req, res) => {
       fetchHeaders['Range'] = req.headers.range;
     }
 
-    const mediaRes = await fetch(mediaUrl, { headers: fetchHeaders });
+    let fetchTarget = mediaUrl;
+    if (activeTunnelUrl && mediaUrl.includes('googlevideo.com')) {
+      fetchTarget = `${activeTunnelUrl}/proxy?url=${encodeURIComponent(mediaUrl)}`;
+      console.log(`🌐 Proxying media download stream through Residential Tunnel: ${activeTunnelUrl}`);
+    }
+
+    let mediaRes = await fetch(fetchTarget, { headers: fetchHeaders });
+    if (!mediaRes.ok && fetchTarget !== mediaUrl && mediaRes.status !== 206) {
+      console.warn(`⚠️ Tunnel download returned HTTP ${mediaRes.status}, retrying direct fetch...`);
+      mediaRes = await fetch(mediaUrl, { headers: fetchHeaders });
+    }
 
     if (!mediaRes.ok && mediaRes.status !== 206) {
       console.error(`❌ YouTube CDN returned status ${mediaRes.status} for ${safeFilename}`);
