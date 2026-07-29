@@ -172,7 +172,7 @@ app.use(express.json());
 
 const limiter = rateLimit({
   windowMs: 1 * 60 * 1000,
-  max: 10,
+  max: 200,
   message: { error: 'Too many requests. Please wait 1 minute.' },
   standardHeaders: true,
   legacyHeaders: false,
