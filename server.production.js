@@ -347,7 +347,9 @@ async function extractVideoInfo(url, videoId) {
           errorMsg = 'Video is blocked in your region';
         }
 
+      if (!res.headersSent) {
         reject(new Error(errorMsg));
+      }
       }
     });
 
