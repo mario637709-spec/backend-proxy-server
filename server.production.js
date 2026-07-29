@@ -179,13 +179,27 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
+let activeTunnelUrl = process.env.TUNNEL_URL || '';
+
+app.post('/api/updateTunnelUrl', (req, res) => {
+  const { tunnelUrl } = req.body || {};
+  if (tunnelUrl) {
+    activeTunnelUrl = tunnelUrl;
+    process.env.TUNNEL_URL = tunnelUrl;
+    console.log(`✨ Live Tunnel URL updated in memory: ${activeTunnelUrl}`);
+    return res.json({ success: true, activeTunnelUrl });
+  }
+  res.status(400).json({ error: 'tunnelUrl required' });
+});
+
 // ============================================
 // HEALTH CHECK
 // ============================================
 app.get('/health', (req, res) => {
   const queueStats = extractionQueue.getStats();
   res.json({
-    status: 'healthy',
+    status: 'ok',
+    activeTunnelUrl: activeTunnelUrl || process.env.TUNNEL_URL,
     uptime: process.uptime(),
     memory: process.memoryUsage(),
     redis: redis && redisConnected ? 'connected' : 'memory-cache',
