@@ -245,9 +245,15 @@ app.get('/api/getVideoJson', async (req, res) => {
       if (tunnelUrl && !req.query.fromTunnel) {
         console.log(`🌐 Primary extraction failed on Render. Falling back to IP tunnel: ${tunnelUrl}`);
         try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 25000);
+          
           const tunnelRes = await fetch(`${tunnelUrl}/api/getVideoJson?videoId=${videoId}&fromTunnel=true`, {
-            headers: { 'ngrok-skip-browser-warning': '69420' }
+            headers: { 'ngrok-skip-browser-warning': '69420' },
+            signal: controller.signal
           });
+          clearTimeout(timeoutId);
+
           const tunnelData = await tunnelRes.json();
           if (tunnelData && tunnelData.formats) {
             console.log(`✅ Tunnel fallback successful for video ${videoId}`);
