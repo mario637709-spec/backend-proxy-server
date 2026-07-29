@@ -4,7 +4,7 @@
   "description": "Backend Proxy Server for Video Extraction",
   "main": "server.js",
   "scripts": {
-    "postinstall": "pip install yt-dlp || pip3 install yt-dlp",
+    "postinstall": "node download-ytdlp.js || true",
     "start": "node server.js"
   },
   "dependencies": {
@@ -12,6 +12,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.3.1",
-    "ioredis": "^5.4.1"
+    "ioredis": "^5.4.1",
+    "ws": "^8.21.1"
   }
 }
