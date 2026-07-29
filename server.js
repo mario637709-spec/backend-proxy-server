@@ -73,10 +73,10 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Aggressive rate limiting for public API
+// Rate limiting for public API (200 requests per minute per IP)
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 10, // 10 requests per minute per IP
+  max: 200, // 200 requests per minute per IP
   message: { error: 'Too many requests. Please wait 1 minute.' },
   standardHeaders: true,
   legacyHeaders: false,
