@@ -84,12 +84,26 @@ const apiLimiter = rateLimit({
 
 app.use('/api/', apiLimiter);
 
+let activeTunnelUrl = process.env.TUNNEL_URL || '';
+
+app.post('/api/updateTunnelUrl', (req, res) => {
+  const { tunnelUrl } = req.body || {};
+  if (tunnelUrl) {
+    activeTunnelUrl = tunnelUrl;
+    process.env.TUNNEL_URL = tunnelUrl;
+    console.log(`✨ Live Tunnel URL updated in memory: ${activeTunnelUrl}`);
+    return res.json({ success: true, activeTunnelUrl });
+  }
+  res.status(400).json({ error: 'tunnelUrl required' });
+});
+
 // ============================================
 // HEALTH CHECK (Required for cloud platforms)
 // ============================================
 app.get('/health', (req, res) => {
   res.json({
-    status: 'healthy',
+    status: 'ok',
+    activeTunnelUrl: activeTunnelUrl || process.env.TUNNEL_URL,
     uptime: process.uptime(),
     memory: process.memoryUsage(),
     timestamp: new Date().toISOString()
@@ -227,7 +241,7 @@ app.get('/api/getVideoJson', async (req, res) => {
       console.error(`❌ yt-dlp error (code ${code}):`, stderrData);
       
       // Fallback: If Render IP is blocked by YouTube, fetch via local Ngrok IP tunnel
-      const tunnelUrl = process.env.TUNNEL_URL;
+      const tunnelUrl = activeTunnelUrl || process.env.TUNNEL_URL;
       if (tunnelUrl && !req.query.fromTunnel) {
         console.log(`🌐 Primary extraction failed on Render. Falling back to IP tunnel: ${tunnelUrl}`);
         try {
