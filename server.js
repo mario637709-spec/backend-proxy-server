@@ -269,10 +269,12 @@ app.get('/api/getVideoJson', async (req, res) => {
         errorMsg = 'Video is blocked in your region';
       }
 
-      res.status(500).json({
-        error: errorMsg,
-        details: process.env.NODE_ENV === 'development' ? stderrData : undefined
-      });
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: errorMsg,
+          details: process.env.NODE_ENV === 'development' ? stderrData : undefined
+        });
+      }
     }
   });
 
