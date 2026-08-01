@@ -118,36 +118,14 @@ function extractYouTubeVideoId(input) {
     str = decodeURIComponent(str);
   } catch (e) {}
 
-  if (/^[a-zA-Z0-9_-]{11}$/.test(str)) {
-    return str;
-  }
-
-  try {
-    const urlObj = new URL(str.startsWith('http://') || str.startsWith('https://') ? str : `https://${str}`);
-    if (urlObj.searchParams.has('v')) {
-      const v = urlObj.searchParams.get('v');
-      if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
+  const matches = str.match(/([a-zA-Z0-9_-]{11})/g);
+  if (matches && matches.length > 0) {
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const candidate = matches[i];
+      if (/^[a-zA-Z0-9_-]{11}$/.test(candidate) && candidate !== 'watch' && candidate !== 'shorts') {
+        return candidate;
+      }
     }
-
-    if (urlObj.hostname.includes('youtu.be')) {
-      const pathId = urlObj.pathname.replace(/^\/+/, '').split('/')[0];
-      if (/^[a-zA-Z0-9_-]{11}$/.test(pathId)) return pathId;
-    }
-
-    const pathMatch = urlObj.pathname.match(/\/(?:embed|shorts|v|video)\/([a-zA-Z0-9_-]{11})/);
-    if (pathMatch) return pathMatch[1];
-  } catch (e) {}
-
-  const regexPatterns = [
-    /[?&]v=([a-zA-Z0-9_-]{11})/,
-    /youtu\.be\/([a-zA-Z0-9_-]{11})/,
-    /\/(?:embed|shorts|v|video)\/([a-zA-Z0-9_-]{11})/,
-    /^([a-zA-Z0-9_-]{11})$/
-  ];
-
-  for (const pattern of regexPatterns) {
-    const match = str.match(pattern);
-    if (match && match[1]) return match[1];
   }
 
   return null;
