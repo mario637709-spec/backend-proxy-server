@@ -13,7 +13,7 @@ import re
 from urllib.parse import urlparse, parse_qs
 
 # Player clients to try in order - ios/android bypass bot detection on datacenter IPs
-PLAYER_CLIENTS = ['ios', 'android', 'web']
+PLAYER_CLIENTS = ['mweb', 'android', 'ios', 'web']
 
 def extract_video_id(url_or_id):
     if not url_or_id or not isinstance(url_or_id, str):
@@ -104,9 +104,6 @@ def fetch(raw_url, po_token=None, visitor_data=None, cookies_file=None, proxy=No
         except Exception as e:
             last_error = str(e)
             print(f"❌ Failed with player_client={client}: {last_error}", file=sys.stderr)
-            # If not bot-related error, don't retry
-            if 'Sign in' not in last_error and 'bot' not in last_error.lower():
-                break
             continue
 
     # All clients failed
