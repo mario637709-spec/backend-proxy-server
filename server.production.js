@@ -208,13 +208,61 @@ app.get('/health', (req, res) => {
   });
 });
 
+function extractYouTubeVideoId(input) {
+  if (!input || typeof input !== 'string') return null;
+  let str = input.trim();
+
+  try {
+    str = decodeURIComponent(str);
+  } catch (e) {}
+
+  if (/^[a-zA-Z0-9_-]{11}$/.test(str)) {
+    return str;
+  }
+
+  try {
+    const urlObj = new URL(str.startsWith('http://') || str.startsWith('https://') ? str : `https://${str}`);
+    if (urlObj.searchParams.has('v')) {
+      const v = urlObj.searchParams.get('v');
+      if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
+    }
+
+    if (urlObj.hostname.includes('youtu.be')) {
+      const pathId = urlObj.pathname.replace(/^\/+/, '').split('/')[0];
+      if (/^[a-zA-Z0-9_-]{11}$/.test(pathId)) return pathId;
+    }
+
+    const pathMatch = urlObj.pathname.match(/\/(?:embed|shorts|v|video)\/([a-zA-Z0-9_-]{11})/);
+    if (pathMatch) return pathMatch[1];
+  } catch (e) {}
+
+  const regexPatterns = [
+    /[?&]v=([a-zA-Z0-9_-]{11})/,
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+    /\/(?:embed|shorts|v|video)\/([a-zA-Z0-9_-]{11})/,
+    /^([a-zA-Z0-9_-]{11})$/
+  ];
+
+  for (const pattern of regexPatterns) {
+    const match = str.match(pattern);
+    if (match && match[1]) return match[1];
+  }
+
+  return null;
+}
+
 // ============================================
 // MAIN API - With Process Queue Protection
 // ============================================
 app.get('/api/getVideoJson', async (req, res) => {
-  const videoId = req.query.videoId;
-  if (!videoId) {
+  const rawInput = req.query.videoId || req.query.url;
+  if (!rawInput) {
     return res.status(400).json({ error: 'videoId is required' });
+  }
+
+  const videoId = extractYouTubeVideoId(rawInput);
+  if (!videoId) {
+    return res.status(400).json({ error: 'Invalid YouTube Video ID or URL' });
   }
 
   const url = `https://www.youtube.com/watch?v=${videoId}`;
