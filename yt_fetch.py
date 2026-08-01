@@ -4,10 +4,63 @@ import yt_dlp
 import argparse
 import os
 
+import sys
+import json
+import yt_dlp
+import argparse
+import os
+import re
+from urllib.parse import urlparse, parse_qs
+
 # Player clients to try in order - ios/android bypass bot detection on datacenter IPs
 PLAYER_CLIENTS = ['ios', 'android', 'web']
 
-def fetch(url, po_token=None, visitor_data=None, cookies_file=None, proxy=None):
+def extract_video_id(url_or_id):
+    if not url_or_id or not isinstance(url_or_id, str):
+        return None
+    val = url_or_id.strip()
+
+    # 1. Direct 11-character video ID
+    if re.match(r'^[a-zA-Z0-9_-]{11}$', val):
+        return val
+
+    # 2. Try URL parsing
+    try:
+        target_str = val if ('://' in val or val.startswith('http')) else 'https://' + val
+        parsed = urlparse(target_str)
+        qs = parse_qs(parsed.query)
+        if 'v' in qs and qs['v']:
+            v_id = qs['v'][0]
+            if re.match(r'^[a-zA-Z0-9_-]{11}$', v_id):
+                return v_id
+
+        if 'youtu.be' in parsed.netloc:
+            path_id = parsed.path.lstrip('/').split('/')[0]
+            if re.match(r'^[a-zA-Z0-9_-]{11}$', path_id):
+                return path_id
+
+        match = re.search(r'/(?:embed|shorts|v|video)/([a-zA-Z0-9_-]{11})', parsed.path)
+        if match:
+            return match.group(1)
+    except Exception:
+        pass
+
+    # 3. Fallback regex search
+    match = re.search(r'[?&]v=([a-zA-Z0-9_-]{11})|youtu\.be\/([a-zA-Z0-9_-]{11})|\/(?:embed|shorts|v)\/([a-zA-Z0-9_-]{11})', val)
+    if match:
+        for g in match.groups():
+            if g and re.match(r'^[a-zA-Z0-9_-]{11}$', g):
+                return g
+
+    return val
+
+def fetch(raw_url, po_token=None, visitor_data=None, cookies_file=None, proxy=None):
+    video_id = extract_video_id(raw_url)
+    if video_id and len(video_id) == 11:
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        print(f"🧹 Cleaned URL video ID: {video_id} -> {url}", file=sys.stderr)
+    else:
+        url = raw_url
     
     last_error = None
 
@@ -16,6 +69,7 @@ def fetch(url, po_token=None, visitor_data=None, cookies_file=None, proxy=None):
             'quiet': True,
             'dump_single_json': True,
             'extract_flat': False,
+            'noplaylist': True,
             'no_warnings': True,
         }
 
