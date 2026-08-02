@@ -118,17 +118,16 @@ function extractYouTubeVideoId(input) {
     str = decodeURIComponent(str);
   } catch (e) {}
 
-  const matches = str.match(/([a-zA-Z0-9_-]{11})/g);
-  if (matches && matches.length > 0) {
-    for (let i = matches.length - 1; i >= 0; i--) {
-      const candidate = matches[i];
-      if (/^[a-zA-Z0-9_-]{11}$/.test(candidate) && candidate !== 'watch' && candidate !== 'shorts') {
-        return candidate;
-      }
-    }
-  }
+  if (/^[a-zA-Z0-9_-]{11}$/.test(str)) return str;
 
-  return null;
+  const vMatch = str.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+  if (vMatch) return vMatch[1];
+
+  const pathMatch = str.match(/(?:youtu\.be\/|shorts\/|embed\/|v\/)([a-zA-Z0-9_-]{11})/);
+  if (pathMatch) return pathMatch[1];
+
+  const genMatch = str.match(/([a-zA-Z0-9_-]{11})/);
+  return genMatch ? genMatch[1] : null;
 }
 
 // ============================================
